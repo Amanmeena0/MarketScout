@@ -1,0 +1,42 @@
+# Core Framework & Server
+fastapi==0.115.4
+uvicorn==0.30.0
+pydantic==2.9.2
+python-dotenv==1.0.1
+
+# Database
+pymongo==4.8.0
+
+# LangChain & LLM Integrations
+langchain-core==0.3.23
+langchain-google-genai==1.1.8
+langgraph==0.2.35
+langchain-mcp-adapters==0.1.11
+mcp==1.1.5
+
+# PDF Generation
+markdown-pdf==1.13.0
+
+# API & Web Scraping
+requests==2.32.3
+praw==7.7.1
+beautifulsoup4==4.12.3
+lxml==5.2.2
+
+# Google APIs
+google-api-python-client==1.12.5
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+google-search-results==2.4.2
+google-trends-api==4.9.2
+
+# YouTube API (if needed)
+yt-dlp==2024.12.31
+
+# Utilities
+python-dateutil==2.9.0.post0
+pytz==2024.1
+certifi==2024.12.14
+
+# Development/Debugging (optional)
+python-multipart==0.0.6
