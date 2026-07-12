@@ -18,8 +18,7 @@ mongodb_uri: Optional[str] = os.getenv("MONGO_DB_URI", None)
 if not google_api_key:
     raise ValueError("Warning: Google API Key is not set. Some features may not work.")
 
-if not reddit_client_id or not reddit_secret:
-    raise ValueError("Warning: Reddit Client ID or Secret is not set. Some features may not work.")
+# Reddit credentials are no longer strictly required as we use the keyless public JSON API.
 
 if not serp_dev_api_key:
     raise ValueError("Warning: SERP Dev API Key is not set. Some features may not work.")

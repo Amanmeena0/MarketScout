@@ -1,43 +1,17 @@
 import sys
 import os
-# Add the mcp_server directory to the Python path
+# Add the root directory to the Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-import praw
-from config import *
+import requests
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("Reddit Tools")
 
-CLIENT_ID = reddit_client_id
-CLIENT_SECRET = reddit_secret
-REDDIT_USERNAME = reddit_username
-REDDIT_PASSWORD = reddit_password
-
-try:
-    if CLIENT_ID and CLIENT_SECRET and REDDIT_USERNAME and REDDIT_PASSWORD:
-        USER_AGENT = f"MySearchScript/1.0 by u/{REDDIT_USERNAME}"
-        reddit = praw.Reddit(
-            client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET,
-            username=REDDIT_USERNAME,
-            password=REDDIT_PASSWORD,
-            user_agent=USER_AGENT,
-        )
-    else:
-        reddit = None
-        
-except Exception as e:
-    reddit = None
-    
-
-
-
-
 @mcp.tool()
 def get_reddit_post_data(query: str, subreddit_name: str = "all", max_posts: int = 5) -> str:
     """
-    Search Reddit for posts and comments related to a specific topic.
+    Search Reddit for posts and comments related to a specific topic using keyless public JSON endpoints.
     
     Args:
         query (str): The search term to look for
@@ -48,77 +22,97 @@ def get_reddit_post_data(query: str, subreddit_name: str = "all", max_posts: int
         str: Comprehensive Reddit sentiment and discussion analysis
     """
     try:
-        if not reddit:
-            
-            return "Error: Reddit client not initialized. Check credentials"
-
         if max_posts > 10:
             max_posts = 10
 
-        subreddit = reddit.subreddit(subreddit_name)
-        search_results = list(subreddit.search(query, sort='relevance', limit=max_posts))
+        # Construct the Reddit search URL
+        if subreddit_name.lower() == "all":
+            url = "https://www.reddit.com/search.json"
+            params = {
+                "q": query,
+                "limit": max_posts,
+                "sort": "relevance"
+            }
+        else:
+            url = f"https://www.reddit.com/r/{subreddit_name}/search.json"
+            params = {
+                "q": query,
+                "limit": max_posts,
+                "sort": "relevance",
+                "restrict_sr": "on"
+            }
 
-        if not search_results:
-            all_reddits = reddit.subreddit("all")
-            search_results = list(all_reddits.search(query, sort='relevance', limit=max_posts))
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 MarketScoutBot/1.0"
+        }
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            return f"Error searching Reddit: HTTP {response.status_code}"
 
-        if not search_results:
-            
+        data = response.json()
+        children = data.get("data", {}).get("children", [])
+
+        if not children:
             return f"No Reddit discussions found for '{query}'"
 
         analysis = f"Reddit Discussion Analysis for '{query}':\n\n"
         analysis += f"Analysis Summary:\n"
-        analysis += f"- Posts analyzed: {len(search_results)}\n"
+        analysis += f"- Posts analyzed: {len(children)}\n"
         analysis += f"- Subreddit: r/{subreddit_name}\n\n"
         
         total_comments = 0
-        
         analysis += "Key Discussions:\n"
         
-        for i, submission in enumerate(search_results, 1):
-            comment_count = submission.num_comments
-            total_comments += comment_count
+        for i, item in enumerate(children, 1):
+            post = item.get("data", {})
+            title = post.get("title", "No Title")
+            subreddit = post.get("subreddit", "unknown")
+            num_comments = post.get("num_comments", 0)
+            permalink = post.get("permalink", "")
+            post_url = f"https://www.reddit.com{permalink}"
             
-            analysis += f"{i}. r/{submission.subreddit.display_name}: {submission.title}\n"
-            analysis += f"   Comments: {comment_count}\n"
-            analysis += f"   URL: https://reddit.com{submission.permalink}\n\n"
-        
-        analysis += "Key Discussions:\n"
-        
-        for i, submission in enumerate(search_results, 1):
-            comment_count = submission.num_comments
-            total_comments += comment_count
-           
-            analysis += f"{i}. r/{submission.subreddit.display_name}: {submission.title}\n"
-            analysis += f"   Comments: {comment_count}\n"
-            analysis += f"   URL: https://reddit.com{submission.permalink}\n"
+            total_comments += num_comments
+            analysis += f"{i}. r/{subreddit}: {title}\n"
+            analysis += f"   Comments: {num_comments}\n"
+            analysis += f"   URL: {post_url}\n"
             
-            # Get top 10 comments
-            submission.comments.replace_more(limit=0)
-            top_comments = submission.comments.list()[:10]
-            
-            if top_comments:
-                analysis += f"   Top Comments:\n"
-            for j, comment in enumerate(top_comments, 1):
-                comment_text = comment.body.replace('\n', ' ') # type: ignore
-                analysis += f"     {j}. {comment_text}...\n"
-            
+            # Fetch comments for this post if permalink exists
+            if permalink:
+                try:
+                    comment_url = f"https://www.reddit.com{permalink}.json"
+                    comment_resp = requests.get(comment_url, headers=headers, timeout=5)
+                    if comment_resp.status_code == 200:
+                        comment_data = comment_resp.json()
+                        # Reddit comment response is a list of two items, the second item is the comments list
+                        if isinstance(comment_data, list) and len(comment_data) > 1:
+                            comments_list = comment_data[1].get("data", {}).get("children", [])[:5] # limit top 5 comments
+                            if comments_list:
+                                analysis += "   Top Comments:\n"
+                                for j, comment_item in enumerate(comments_list, 1):
+                                    c_data = comment_item.get("data", {})
+                                    body = c_data.get("body", "")
+                                    if body:
+                                        body_clean = body.replace('\n', ' ')
+                                        body_snip = (body_clean[:150] + "...") if len(body_clean) > 150 else body_clean
+                                        analysis += f"     {j}. {body_snip}\n"
+                except Exception:
+                    pass
             analysis += "\n"
-        
-        analysis += f"Overall Insights:\n"
-        analysis += f"- Total comments analyzed: {total_comments}\n"
-        analysis += f"- Most active discussions found in: {', '.join(set([s.subreddit.display_name for s in search_results]))}\n"
-        
+            
+        analysis += "Overall Insights:\n"
+        analysis += f"- Total comments across posts: {total_comments}\n"
+        subreddits_found = list(set([item.get("data", {}).get("subreddit", "unknown") for item in children]))
+        analysis += f"- Most active discussions found in: {', '.join(subreddits_found)}\n"
         
         return analysis
     except Exception as e:
-        
-        return f"Error searching Reddit"
+        return f"Error searching Reddit: {str(e)}"
 
 @mcp.tool()
 def find_relevant_subreddits(keywords: str, limit: int = 10) -> str:
     """
-    Find subreddits relevant to specific keywords for targeted market research.
+    Find subreddits relevant to specific keywords for targeted market research using public endpoints.
     
     Args:
         keywords (str): Space-separated keywords to search for
@@ -128,48 +122,51 @@ def find_relevant_subreddits(keywords: str, limit: int = 10) -> str:
         str: Analysis of relevant subreddits with community insights
     """
     try:
-        if not reddit:
+        url = "https://www.reddit.com/subreddits/search.json"
+        params = {
+            "q": keywords,
+            "limit": limit
+        }
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 MarketScoutBot/1.0"
+        }
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            return f"Error searching subreddits: HTTP {response.status_code}"
             
-            return "Error: Reddit client not initialized. Check credentials"
-
-        keywords_list = keywords.split()
-        query = " ".join(keywords_list)
+        data = response.json()
+        children = data.get("data", {}).get("children", [])
         
-        subreddits_list = list(reddit.subreddits.search(query, limit=limit))
-        subreddit_data = []
+        if not children:
+            return f"No subreddits found for keywords: '{keywords}'"
+            
+        analysis = f"Relevant Subreddits Analysis for '{keywords}':\n\n"
+        analysis += f"Found {len(children)} relevant communities:\n\n"
         
-        for sub in subreddits_list:
-            try:
-                subreddit_data.append({
-                    'name': sub.display_name,
-                    'description': sub.public_description or 'No description available',
-                    'subscribers': getattr(sub, 'subscribers', 'Unknown')
-                })
-            except Exception:
-                
-                continue  # Skip subreddits that can't be accessed
-        
-        if not subreddit_data:
-            return f"No subreddits found for keywords: '{query}'"
-        
-        analysis = f"Relevant Subreddits Analysis for '{query}':\n\n"
-        analysis += f"Found {len(subreddit_data)} relevant communities:\n\n"
-        
-        for i, sub in enumerate(subreddit_data, 1):
-            analysis += f"{i}. r/{sub['name']}\n"
-            analysis += f"   Subscribers: {sub['subscribers']}\n"
-            analysis += f"   Description: {sub['description'][:100]}...\n\n"
-        
+        for i, item in enumerate(children, 1):
+            sub = item.get("data", {})
+            name = sub.get("display_name", "")
+            title = sub.get("title", "")
+            description = sub.get("public_description", "No description available")
+            subscribers = sub.get("subscribers", "Unknown")
+            
+            description_clean = description.replace('\n', ' ')
+            description_snip = (description_clean[:120] + "...") if len(description_clean) > 120 else description_clean
+            
+            analysis += f"{i}. r/{name} ({title})\n"
+            analysis += f"   Subscribers: {subscribers}\n"
+            analysis += f"   Description: {description_snip}\n\n"
+            
         analysis += "Community Insights:\n"
-        analysis += f"- Total communities found: {len(subreddit_data)}\n"
+        analysis += f"- Total communities found: {len(children)}\n"
         analysis += f"- Search keywords: {keywords}\n"
-        analysis += f"- These communities can provide valuable market insights and customer feedback\n"
-        
+        analysis += "- These communities can provide valuable market insights and customer feedback\n"
         
         return analysis
     except Exception as e:
-        
-        return f"Error finding subreddits"
+        return f"Error finding subreddits: {str(e)}"
 
 if __name__ == "__main__":
     mcp.run('streamable-http')
