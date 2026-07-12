@@ -31,7 +31,7 @@ class McpState:
     tools: List[BaseTool] = []
 
 
-MCP_BASE = "http://localhost:5000"
+MCP_BASE = "http://localhost:5001"
 
 
 @asynccontextmanager
