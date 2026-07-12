@@ -6,12 +6,12 @@ import datetime
 
 
 class AnalysisType(str, Enum):
-    INDUSTRY_ANALYSIS = 'Industry Report',
-    COMPETITOR_ANALYSIS = 'Competitor Report',
-    MARKET_GAP_ANALYSIS = 'Market Gap Report',
-    TARGET_MARKET_ANALYSIS = 'Target Market Report',
-    BARRIER_ANALYSIS = 'Barrier Report',
-    SALES_FORECASTING = 'Sales Forecast Report',
+    INDUSTRY_ANALYSIS = 'Industry Report'
+    COMPETITOR_ANALYSIS = 'Competitor Report'
+    MARKET_GAP_ANALYSIS = 'Market Gap Report'
+    TARGET_MARKET_ANALYSIS = 'Target Market Report'
+    BARRIER_ANALYSIS = 'Barrier Report'
+    SALES_FORECASTING = 'Sales Forecast Report'
 
 
 class Status(str, Enum):
