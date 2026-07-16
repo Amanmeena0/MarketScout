@@ -440,3 +440,82 @@ Use this structure to pitch this architecture in a **5-minute interview answer**
        Google APIs              Reddit JSON               Crawl4AI
      (Search, Trends)           Public Search          Web Crawler
 ```
+
+---
+
+## 15. Getting Started & Local Development
+
+### Prerequisites
+- **Python**: Python 3.10 or 3.11 is recommended.
+- **MongoDB**: A running MongoDB instance (locally via Community Edition or in the cloud using MongoDB Atlas).
+- **API Keys**:
+  - `GOOGLE_API_KEY`: Required if using Google Gemini models.
+  - `SERP_DEV_API_KEY` (or `SERP_API_KEY`): Required for Google Search and Trend tool operations.
+  - `HUGGINGFACEHUB_API_TOKEN`: Required if using Hugging Face models.
+
+### Local Installation
+1. **Clone/Navigate to the Server Directory**:
+   ```bash
+   cd server
+   ```
+2. **Create and Activate a Virtual Environment**:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+3. **Install Dependencies**:
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+4. **Environment Configuration**:
+   Copy `.env.example` to `.env` and fill in the required keys:
+   ```bash
+   cp .env.example .env
+   ```
+
+### Running the Application Locally
+To run the full suite, you need to start your MongoDB instance, the Model Context Protocol (MCP) server, and the main FastAPI server.
+
+1. **Start MongoDB**:
+   Make sure MongoDB is running. If installed via Homebrew on macOS:
+   ```bash
+   brew services start mongodb-community
+   ```
+2. **Start the MCP Gateway & Tool Servers (Port 5001)**:
+   ```bash
+   python -m mcp_servers.main
+   ```
+3. **Start the FastAPI Backend Orchestrator (Port 8000)**:
+   ```bash
+   python server.py
+   ```
+
+### Testing the Setup
+You can access the FastAPI Swagger UI documentation at `http://localhost:8000/docs` to test endpoints such as `POST /analysis` and `GET /analysis/{analysis_id}`.
+
+---
+
+## 16. Multi-Model Pipeline & Configuration
+
+MarketScout supports a configurable multi-model pipeline where different steps of the research workflow can be routed to different LLM models. By default, it supports Google Generative AI (Gemini) and Hugging Face providers.
+
+### Multi-Model Settings in `.env`
+You can configure different models for distinct pipeline stages:
+- `PLANNER_MODEL`: Handles initial research planning (default: `gemini-2.0-flash`).
+- `TOOL_ROUTING_MODEL`: Coordinates ReAct tool calls to fetch evidence (default: `Qwen/Qwen3-32B`).
+- `SUMMARIZATION_MODEL`: Compresses large scraper outputs (default: `deepseek-ai/DeepSeek-V3`).
+- `EVIDENCE_ANALYSIS_MODEL`: Synthesizes raw tool outputs into facts and URLs (default: `Qwen/Qwen3-32B`).
+- `REPORT_WRITING_MODEL`: Drafts the final report document (default: `gemini-2.0-flash`).
+- `REPORT_REVIEW_MODEL`: Performs quality check/gap reflection (default: `deepseek-ai/DeepSeek-V3`).
+
+### LLM Provider Resolution
+- If the model name contains a slash `/` (e.g., `Qwen/Qwen3-32B` or `deepseek-ai/DeepSeek-V3`), it will automatically resolve to the Hugging Face provider.
+- If the model name contains `gemini`, it will resolve to the Google provider.
+- The default fallback provider can be specified using `LLM_PROVIDER` (`google` or `huggingface`).
+
+### Gemini Free Tier Rate Limiting
+To prevent `ResourceExhausted` (`429` / quota exceeded) errors when using Gemini Free Tier, MarketScout includes:
+1. **Shared Rate Limiting**: A global rate limiter (`InMemoryRateLimiter`) set via `GOOGLE_RATE_LIMIT_RPS` (default is `0.1` requests/sec, i.e., 1 request per 10 seconds).
+2. **Transient Error Handling**: Automated exponential backoff retry logic (up to 7 retries with jitter) to recover from rate-limits or temporary overloads.
+
