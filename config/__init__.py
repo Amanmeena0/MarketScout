@@ -12,5 +12,11 @@ __all__ = [
     "reddit_client_id",
     "reddit_secret",
     "reddit_username",
-    "reddit_password"
+    "reddit_password",
+    "planner_model",
+    "tool_routing_model",
+    "summarization_model",
+    "evidence_analysis_model",
+    "report_writing_model",
+    "report_review_model",
 ]

@@ -1,15 +1,17 @@
 import json
+import asyncio
 from langgraph.prebuilt import create_react_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_core.messages import HumanMessage, AIMessage,ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
-from typing import List
-from langchain_core.tools import BaseTool
+from typing import List, Optional
+from langchain_core.tools import BaseTool, Tool
 from langgraph.config import get_stream_writer
 from langgraph.types import Send
 from .state import *
 from .utils import *
+
 
 
 async def make_graph(
@@ -20,12 +22,17 @@ async def make_graph(
     model_name: Optional[str] = None,
     k: int = 2,
 ):
+    # Resolve specialized models or respect global override
+    find_gaps_llm = get_llm(model_name=model_name or report_review_model)
+    tool_routing_llm = get_llm(model_name=model_name or tool_routing_model)
+    report_writing_llm = get_llm(model_name=model_name or report_writing_model)
 
-    llm = get_llm(model_name=model_name)
+    # Wrap tools with summarization capability
+    summarized_tools = wrap_tools_with_summarizer(tools)
 
     react_agent = create_react_agent(
-        model=llm,
-        tools=tools,
+        model=tool_routing_llm,
+        tools=summarized_tools,
     )
     
     async def find_gaps(state: AgentState):
@@ -35,17 +42,16 @@ async def make_graph(
         )
 
         response = call_llm_with_backoff(
-            llm, [HumanMessage(content=rf_prompt.to_string())]
+            find_gaps_llm, [HumanMessage(content=rf_prompt.to_string())]
         )
         response = str(response.content) if response else "No Gaps Found"
 
         if response.startswith("```json"):
             response = response[7:-3]  # Remove the markdown code block formatting
 
-        return {"knowledge_gaps":response}
+        return {"knowledge_gaps": response}
 
     async def continue_to_fill_gaps(state: AgentState):
-
         gaps = json.loads(state["knowledge_gaps"])
         knowledge_gaps = []
         for kg in gaps:
@@ -58,7 +64,6 @@ async def make_graph(
         return [Send("fill_gaps", {'kg_gap': kg}) for kg in knowledge_gaps]
 
     async def fill_gaps(state: AgentState):
-
         curr_gap = state["kg_gap"]
         
         fill_prompt = fill_gaps_prompt.invoke(
@@ -72,13 +77,12 @@ async def make_graph(
         writer = get_stream_writer()  
         ans = ""
 
-        async for stream_mode,message  in response:
-            if(stream_mode == "values"):
+        async for stream_mode, message in response:
+            if stream_mode == "values":
                 last = message["messages"] # type: ignore
                 if isinstance(last[-1], AIMessage):
                     ans = message["messages"][-1].content  # type: ignore
                     writer({'react_agent': message}) 
-           
 
         return {"filled_gaps": ans}
 
@@ -91,14 +95,14 @@ async def make_graph(
         )
 
         response = call_llm_with_backoff(
-            llm, [HumanMessage(content=merge_prompt.to_string())]
+            report_writing_llm, [HumanMessage(content=merge_prompt.to_string())]
         )
 
         return {
             "messages": [HumanMessage(content=response.content if response else "")],
             "k": state["k"] + 1,
-            "report": response.content , # type: ignore
-            "filled_gaps":"DELETE"
+            "report": response.content, # type: ignore
+            "filled_gaps": "DELETE"
         }
 
     async def route_loop(state: AgentState):
@@ -109,16 +113,15 @@ async def make_graph(
         """Final node to return the final report."""
         return {"report": state["report"]}
 
-    # 5.  Build the graph
+    # Build the graph
     workflow = StateGraph(AgentState)
     workflow.add_node("find_gaps", find_gaps)
     workflow.add_node("fill_gaps", fill_gaps)
     workflow.add_node("merge_filled_gaps", merge_filled_gaps)
     workflow.add_node("final", final_node)
-    
 
     workflow.set_entry_point("find_gaps")  # Start with finding gaps
-    workflow.add_conditional_edges("find_gaps",continue_to_fill_gaps,['fill_gaps'])  # type: ignore
+    workflow.add_conditional_edges("find_gaps", continue_to_fill_gaps, ['fill_gaps'])  # type: ignore
     workflow.add_edge("fill_gaps", "merge_filled_gaps")
     workflow.add_conditional_edges(
         "merge_filled_gaps", route_loop, ["find_gaps", "final"]
@@ -126,6 +129,4 @@ async def make_graph(
     workflow.add_edge("final", END)
 
     graph = workflow.compile()
-    # graph.get_graph().draw_mermaid_png(output_file_path="./graph.png")
-
     return graph

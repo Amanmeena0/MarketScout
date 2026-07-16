@@ -1,15 +1,22 @@
 import os
 import asyncio
 from markdown_pdf import MarkdownPdf, Section
-from typing import List, Any
+from typing import List, Any, Optional
 from bson import ObjectId
 from langchain_core.tools import BaseTool
-from langchain_core.messages import ToolMessage, AIMessage
+from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 from config.settings import output_dir
 from database.db import db
 from database.schema import AnalysisType, Status
-from .utils import get_llm
+from .utils import (
+    get_llm,
+    wrap_tools_with_summarizer,
+    planner_model,
+    tool_routing_model,
+    evidence_analysis_model,
+    report_writing_model,
+)
 from .graph import make_graph
 
 
@@ -37,7 +44,14 @@ async def create_agent(
             {"$set": {"status": Status.IN_PROGRESS}}
         )
 
-        llm = get_llm(model_name=model_name)
+        # Resolve specialized component models or respect global override
+        planner_llm = get_llm(model_name=model_name or planner_model)
+        tool_routing_llm = get_llm(model_name=model_name or tool_routing_model)
+        evidence_analysis_llm = get_llm(model_name=model_name or evidence_analysis_model)
+        report_writing_llm = get_llm(model_name=model_name or report_writing_model)
+
+        # Wrap tools for the initial pass too to auto-summarize long outputs
+        summarized_tools = wrap_tools_with_summarizer(tools)
 
         industry_research_agent = await make_graph(
             tools=tools,
@@ -47,28 +61,83 @@ async def create_agent(
             model_name=model_name,
         )
 
-        react_agent = create_react_agent(model=llm, tools=tools, prompt=PROMPT)
+        # ----------------------------------------------------------
+        # Step 1. PLANNER Step
+        # ----------------------------------------------------------
+        await out_queue.put("Step 1: Creating detailed research plan...\n")
+        plan_prompt = (
+            f"You are a master research planner. Given the user query: '{user_prompt}', create a highly detailed, "
+            f"structured research plan and search strategy. Outline the key questions we need to answer, specific "
+            f"data points/statistics to search for, and the sections of the report to target. Return ONLY the markdown plan."
+        )
+        plan_msg = await planner_llm.ainvoke([HumanMessage(content=plan_prompt)])
+        research_plan = str(plan_msg.content)
+        await out_queue.put(f"=== Research Plan ===\n{research_plan}\n\n")
 
         # ----------------------------------------------------------
-        # 1. Initial REACT pass
+        # Step 2. TOOL ROUTING Step (ReAct agent gathers evidence)
         # ----------------------------------------------------------
-        init_report = ""
-
+        await out_queue.put("Step 2: Executing tool routing to gather evidence...\n")
+        agent_guideline = (
+            f"{PROMPT}\n\n"
+            f"You have been provided with the following research plan:\n{research_plan}\n\n"
+            f"Your critical task is to use your tools to execute this research plan and gather all required evidence. "
+            f"Do not draft the final report. Instead, output a detailed, structured collection of all facts, numbers, "
+            f"URLs, and evidence you found from the tools."
+        )
+        react_agent = create_react_agent(model=tool_routing_llm, tools=summarized_tools, prompt=agent_guideline)
+        
+        gathered_evidence = []
         async for message in react_agent.astream(
-            {"messages": [{"role": "user", "content": user_prompt}]},
+            {"messages": [{"role": "user", "content": f"Execute research plan for: {user_prompt}"}]},
             {"recursion_limit": 50},
             stream_mode="values",
         ):
             last = message["messages"][-1]
             if isinstance(last, ToolMessage):
                 await out_queue.put(f"Results:\n{last.content}\n")
+                gathered_evidence.append(f"Tool Result ({last.name}): {last.content}")
             elif isinstance(last, AIMessage):
                 await out_queue.put(last.content)
                 for tc in last.tool_calls:
                     await out_queue.put(f"Tool Call:\n {tc['name']}")
                     await out_queue.put(f"Arguments:\n {tc['args']}")
-                init_report = last.content
+                gathered_evidence.append(last.content)
+                
+        evidence_raw_text = "\n\n".join(gathered_evidence)
 
+        # ----------------------------------------------------------
+        # Step 3. EVIDENCE ANALYSIS Step (Synthesizes facts)
+        # ----------------------------------------------------------
+        await out_queue.put("\nStep 3: Conducting deep evidence analysis and synthesis...\n")
+        analysis_prompt = (
+            f"You are a Senior Evidence Analyst. Meticulously analyze all the raw tool outputs and evidence gathered "
+            f"during our research on '{user_prompt}':\n\n"
+            f"Gathered Evidence:\n{evidence_raw_text}\n\n"
+            f"Extract, verify, and synthesize a comprehensive summary of key quantitative facts, figures, market player shares, "
+            f"regulatory requirements, and links. Ensure every key claim has a corresponding citation URL."
+        )
+        analysis_msg = await evidence_analysis_llm.ainvoke([HumanMessage(content=analysis_prompt)])
+        evidence_synthesis = str(analysis_msg.content)
+        await out_queue.put(f"=== Evidence Analysis ===\n{evidence_synthesis}\n\n")
+
+        # ----------------------------------------------------------
+        # Step 4. REPORT WRITING Step (Drafts the first report)
+        # ----------------------------------------------------------
+        await out_queue.put("Step 4: Writing initial comprehensive report...\n")
+        writing_prompt = (
+            f"You are a professional report writer. Write a comprehensive, detailed markdown report for the query: '{user_prompt}'.\n"
+            f"Use the synthesized evidence analysis:\n{evidence_synthesis}\n\n"
+            f"Your report must follow these guidelines:\n{PROMPT}\n\n"
+            f"Write the initial comprehensive draft containing all required sections."
+        )
+        writing_msg = await report_writing_llm.ainvoke([HumanMessage(content=writing_prompt)])
+        init_report = str(writing_msg.content)
+        await out_queue.put("\nInitial Draft Report Generated.\n")
+
+        # ----------------------------------------------------------
+        # LangGraph: Iterative review and gap filling
+        # ----------------------------------------------------------
         final_report = ""
 
         async for mode, message in industry_research_agent.astream(

@@ -21,6 +21,14 @@ if not llm_provider:
 google_model: str = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
 hf_model: str = os.getenv("HF_MODEL", "Qwen/Qwen2.5-72B-Instruct")
 
+# Component-Specific Models Configuration
+planner_model: str = os.getenv("PLANNER_MODEL", "gemini-2.0-flash")
+tool_routing_model: str = os.getenv("TOOL_ROUTING_MODEL", "Qwen/Qwen3-32B")
+summarization_model: str = os.getenv("SUMMARIZATION_MODEL", "deepseek-ai/DeepSeek-V3")
+evidence_analysis_model: str = os.getenv("EVIDENCE_ANALYSIS_MODEL", "Qwen/Qwen3-32B")
+report_writing_model: str = os.getenv("REPORT_WRITING_MODEL", "gemini-2.0-flash")
+report_review_model: str = os.getenv("REPORT_REVIEW_MODEL", "deepseek-ai/DeepSeek-V3")
+
 # Default rate limit for Free Tier is 0.1 rps (1 request per 10 seconds).
 # Set GOOGLE_RATE_LIMIT_RPS to 0, none, or empty to disable the rate limiter.
 google_rate_limit_rps: Optional[float] = 0.1

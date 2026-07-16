@@ -1,8 +1,10 @@
 import random
 import time
+from typing import List, Optional
 from google.api_core.exceptions import ServiceUnavailable, ResourceExhausted
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.rate_limiters import InMemoryRateLimiter
+from langchain_core.tools import BaseTool
 from config import (
     google_api_key,
     huggingfacehub_api_token,
@@ -10,6 +12,12 @@ from config import (
     google_model,
     hf_model,
     google_rate_limit_rps,
+    planner_model,
+    tool_routing_model,
+    summarization_model,
+    evidence_analysis_model,
+    report_writing_model,
+    report_review_model,
 )
 
 def _is_transient_error(e: Exception) -> bool:
@@ -92,3 +100,58 @@ def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
         google_api_key=google_api_key,
         max_retries=10
     )
+
+
+def summarize_text(text: str, max_chars: int = 1500) -> str:
+    """Summarize long text using the configured summarization model if it exceeds length limits."""
+    if not text or len(text) <= max_chars:
+        return text or ""
+        
+    try:
+        llm = get_llm(model_name=summarization_model)
+        from langchain_core.messages import HumanMessage
+        prompt = (
+            f"You are an expert text summarizer. Meticulously analyze the following text and synthesize a highly detailed, "
+            f"factual summary preserving all key statistics, numbers, dates, URLs, and insights. Keep it concise but information-dense.\n\n"
+            f"Text to summarize:\n{text}"
+        )
+        summary_response = call_llm_with_backoff(llm, [HumanMessage(content=prompt)])
+        return str(summary_response.content) if summary_response else text
+    except Exception as e:
+        print(f"Failed to summarize text: {e}")
+        return text[:max_chars] + "... [Truncated due to summarization failure]"
+
+
+class SummarizedTool(BaseTool):
+    original_tool: BaseTool
+
+    def _run(self, *args, **kwargs) -> str:
+        tool_input = kwargs if kwargs else (args[0] if args else {})
+        res = self.original_tool.invoke(tool_input)
+        res_str = str(res)
+        if len(res_str) > 2000:
+            res_str = summarize_text(res_str)
+        return res_str
+        
+    async def _arun(self, *args, **kwargs) -> str:
+        tool_input = kwargs if kwargs else (args[0] if args else {})
+        res = await self.original_tool.ainvoke(tool_input)
+        res_str = str(res)
+        if len(res_str) > 2000:
+            res_str = summarize_text(res_str)
+        return res_str
+
+
+def wrap_tools_with_summarizer(tools: List[BaseTool]) -> List[BaseTool]:
+    """Wraps tools so that large results are summarized using the configured summarization model."""
+    wrapped = []
+    for tool in tools:
+        wrapped.append(
+            SummarizedTool(
+                name=tool.name,
+                description=tool.description,
+                args_schema=tool.args_schema,
+                original_tool=tool,
+            )
+        )
+    return wrapped
