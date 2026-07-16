@@ -17,15 +17,15 @@ async def make_graph(
     reflection_instructions_prompt,
     fill_gaps_prompt,
     merge_gaps_prompt,
+    model_name: Optional[str] = None,
     k: int = 2,
 ):
 
-    llm = get_llm()
+    llm = get_llm(model_name=model_name)
 
     react_agent = create_react_agent(
         model=llm,
         tools=tools,
-        
     )
     
     async def find_gaps(state: AgentState):

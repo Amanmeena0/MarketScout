@@ -1,11 +1,14 @@
 import os
 import asyncio
 from markdown_pdf import MarkdownPdf, Section
-from typing import List
+from typing import List, Any
+from bson import ObjectId
 from langchain_core.tools import BaseTool
 from langchain_core.messages import ToolMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
 from config.settings import output_dir
+from database.db import db
+from database.schema import AnalysisType, Status
 from .utils import get_llm
 from .graph import make_graph
 
@@ -15,25 +18,33 @@ from .graph import make_graph
 # ------------------------------------------------------------------
 async def create_agent(
     id: str,
-    analysisType: str,
+    analysisType: AnalysisType,
     user_prompt: str,
     tools: List[BaseTool],
     out_queue: asyncio.Queue,
-    PROMPT: str,
-    reflection_instructions_prompt,
-    fill_gaps_prompt,
-    merge_gaps_prompt,
+    PROMPT: Any,
+    reflection_instructions_prompt: Any,
+    fill_gaps_prompt: Any,
+    merge_gaps_prompt: Any,
+    model_name: Optional[str] = None,
 ) -> None:
     # Convert id to string in case it's an ObjectId
     id_str = str(id)
     try:
-        llm = get_llm()
+        # 1. Update status to IN_PROGRESS in MongoDB
+        db.analyses.update_one(
+            {"_id": ObjectId(id_str)},
+            {"$set": {"status": Status.IN_PROGRESS}}
+        )
+
+        llm = get_llm(model_name=model_name)
 
         industry_research_agent = await make_graph(
             tools=tools,
             reflection_instructions_prompt=reflection_instructions_prompt,
             fill_gaps_prompt=fill_gaps_prompt,
             merge_gaps_prompt=merge_gaps_prompt,
+            model_name=model_name,
         )
 
         react_agent = create_react_agent(model=llm, tools=tools, prompt=PROMPT)
@@ -95,21 +106,35 @@ async def create_agent(
 
         print("Generating final report...")
         pdf = MarkdownPdf()
-        pdf.meta["title"] = analysisType
+        pdf.meta["title"] = analysisType.value
         pdf.add_section(Section(final_report, toc=False))
 
         os.makedirs(f"{output_dir}/{id_str}", exist_ok=True)
-        pdf.save(os.path.join(output_dir, id_str, f"{analysisType}.pdf"))
+        pdf_filename = f"{analysisType.value}.pdf"
+        pdf_path = os.path.join(output_dir, id_str, pdf_filename)
+        pdf.save(pdf_path)
+
+        # 2. Update status to COMPLETED and save report path in MongoDB
+        db.analyses.update_one(
+            {"_id": ObjectId(id_str)},
+            {"$set": {
+                "status": Status.COMPLETED,
+                "report_path": f"{id_str}/{pdf_filename}"
+            }}
+        )
 
         await out_queue.put(
-            f"__OUTPUT_FILE__{output_dir}/{id_str}/{analysisType}.pdf\n"
+            f"__OUTPUT_FILE__{output_dir}/{id_str}/{pdf_filename}\n"
         )
 
     except Exception as exc:
-
-        print(exc)
+        print(f"Agent execution failed for {id_str}: {exc}")
+        # 3. Update status to FAILED in MongoDB
+        db.analyses.update_one(
+            {"_id": ObjectId(id_str)},
+            {"$set": {"status": Status.FAILED}}
+        )
         await out_queue.put(f"__ERROR__{type(exc).__name__}: {exc}")
 
     finally:
-
         await out_queue.put(None)

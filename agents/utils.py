@@ -52,7 +52,7 @@ def call_tool_llm_with_backoff(tool_llm, messages, max_retries=7, base_delay=4):
                 raise e
 
 
-def get_llm():
+def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
     # Setup rate limiter if configured
     rate_limiter = None
     if google_rate_limit_rps is not None and google_rate_limit_rps > 0:
@@ -62,10 +62,19 @@ def get_llm():
             max_bucket_size=1,
         )
 
-    if llm_provider == "huggingface":
+    # Determine provider based on parameter, model name prefix, or system default
+    resolved_provider = provider or llm_provider
+    if model_name and not provider:
+        if "/" in model_name:
+            resolved_provider = "huggingface"
+        elif "gemini" in model_name.lower():
+            resolved_provider = "google"
+
+    if resolved_provider == "huggingface":
+        resolved_model = model_name or hf_model
         from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
         llm = HuggingFaceEndpoint(
-            repo_id=hf_model,
+            repo_id=resolved_model,
             task="text-generation",
             max_new_tokens=2048,
             huggingfacehub_api_token=huggingfacehub_api_token,
@@ -76,8 +85,9 @@ def get_llm():
         return chat_model
 
     # Default to Google Generative AI
+    resolved_model = model_name or google_model
     return ChatGoogleGenerativeAI(
-        model=google_model,
+        model=resolved_model,
         rate_limiter=rate_limiter,
         google_api_key=google_api_key,
         max_retries=10
