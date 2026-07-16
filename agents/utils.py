@@ -10,7 +10,6 @@ from config import (
     huggingfacehub_api_token,
     llm_provider,
     google_model,
-    hf_model,
     google_rate_limit_rps,
     planner_model,
     tool_routing_model,
@@ -60,16 +59,17 @@ def call_tool_llm_with_backoff(tool_llm, messages, max_retries=7, base_delay=4):
                 raise e
 
 
-def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
-    # Setup rate limiter if configured
-    rate_limiter = None
-    if google_rate_limit_rps is not None and google_rate_limit_rps > 0:
-        rate_limiter = InMemoryRateLimiter(
-            requests_per_second=google_rate_limit_rps,
-            check_every_n_seconds=0.1,
-            max_bucket_size=1,
-        )
+# Setup a shared global rate limiter for Google Generative AI to prevent ResourceExhausted errors across concurrent requests.
+_google_rate_limiter = None
+if google_rate_limit_rps is not None and google_rate_limit_rps > 0:
+    _google_rate_limiter = InMemoryRateLimiter(
+        requests_per_second=google_rate_limit_rps,
+        check_every_n_seconds=0.1,
+        max_bucket_size=1,
+    )
 
+
+def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
     # Determine provider based on parameter, model name prefix, or system default
     resolved_provider = provider or llm_provider
     if model_name and not provider:
@@ -79,7 +79,9 @@ def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
             resolved_provider = "google"
 
     if resolved_provider == "huggingface":
-        resolved_model = model_name or hf_model
+        resolved_model = model_name
+        if not resolved_model:
+            raise ValueError("model_name must be specified for huggingface provider")
         from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
         llm = HuggingFaceEndpoint(
             repo_id=resolved_model,
@@ -88,15 +90,13 @@ def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
             huggingfacehub_api_token=huggingfacehub_api_token,
         )
         chat_model = ChatHuggingFace(llm=llm)
-        if rate_limiter:
-            chat_model.rate_limiter = rate_limiter
         return chat_model
 
     # Default to Google Generative AI
     resolved_model = model_name or google_model
     return ChatGoogleGenerativeAI(
         model=resolved_model,
-        rate_limiter=rate_limiter,
+        rate_limiter=_google_rate_limiter,
         google_api_key=google_api_key,
         max_retries=10
     )

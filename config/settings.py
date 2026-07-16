@@ -19,7 +19,6 @@ if not llm_provider:
         llm_provider = "google"
 
 google_model: str = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
-hf_model: str = os.getenv("HF_MODEL", "Qwen/Qwen2.5-72B-Instruct")
 
 # Component-Specific Models Configuration
 planner_model: str = os.getenv("PLANNER_MODEL", "gemini-2.0-flash")
