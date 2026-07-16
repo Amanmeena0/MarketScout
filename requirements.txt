@@ -42,3 +42,7 @@ crawl4ai
 
 # Development/Debugging (optional)
 python-multipart
+
+# Hugging Face Integration
+langchain-huggingface
+huggingface_hub
