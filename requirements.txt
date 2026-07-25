@@ -9,6 +9,7 @@ pymongo
 # LangChain & LLM Integrations
 langchain-core
 langchain-google-genai
+langchain-groq
 langgraph
 langchain-mcp-adapters
 mcp
