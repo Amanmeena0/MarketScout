@@ -7,26 +7,32 @@ load_dotenv()
 
 google_api_key: Optional[str] = os.getenv("GOOGLE_API_KEY")
 huggingfacehub_api_token: Optional[str] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
 
-# Provider: 'google' or 'huggingface'
+# Provider: 'google', 'huggingface', 'groq', or 'jan'
 llm_provider: str = os.getenv("LLM_PROVIDER", "").lower()
 if not llm_provider:
     if google_api_key:
         llm_provider = "google"
+    elif groq_api_key:
+        llm_provider = "groq"
     elif huggingfacehub_api_token:
         llm_provider = "huggingface"
     else:
         llm_provider = "google"
 
 google_model: str = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
+multipurpose_model: str = os.getenv("MULTIPURPOSE_MODEL", "jan-v1-4b")
+groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+groq_fallback_model: str = os.getenv("GROQ_FALLBACK_MODEL", "qwen3-32b")
 
 # Component-Specific Models Configuration
 planner_model: str = os.getenv("PLANNER_MODEL", "gemini-2.0-flash")
-tool_routing_model: str = os.getenv("TOOL_ROUTING_MODEL", "Qwen/Qwen3-32B")
-summarization_model: str = os.getenv("SUMMARIZATION_MODEL", "deepseek-ai/DeepSeek-V3")
-evidence_analysis_model: str = os.getenv("EVIDENCE_ANALYSIS_MODEL", "Qwen/Qwen3-32B")
+tool_routing_model: str = os.getenv("TOOL_ROUTING_MODEL", "llama-3.3-70b-versatile")
+summarization_model: str = os.getenv("SUMMARIZATION_MODEL", "jan-v1-4b")
+evidence_analysis_model: str = os.getenv("EVIDENCE_ANALYSIS_MODEL", "llama-3.3-70b-versatile")
 report_writing_model: str = os.getenv("REPORT_WRITING_MODEL", "gemini-2.0-flash")
-report_review_model: str = os.getenv("REPORT_REVIEW_MODEL", "deepseek-ai/DeepSeek-V3")
+report_review_model: str = os.getenv("REPORT_REVIEW_MODEL", "gemini-2.0-flash")
 
 # Default rate limit for Free Tier is 0.1 rps (1 request per 10 seconds).
 # Set GOOGLE_RATE_LIMIT_RPS to 0, none, or empty to disable the rate limiter.

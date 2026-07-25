@@ -5,11 +5,16 @@ from google.api_core.exceptions import ServiceUnavailable, ResourceExhausted
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_core.tools import BaseTool
+import os
 from config import (
     google_api_key,
     huggingfacehub_api_token,
+    groq_api_key,
     llm_provider,
     google_model,
+    multipurpose_model,
+    groq_model,
+    groq_fallback_model,
     google_rate_limit_rps,
     planner_model,
     tool_routing_model,
@@ -71,15 +76,54 @@ if google_rate_limit_rps is not None and google_rate_limit_rps > 0:
 
 def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
     # Determine provider based on parameter, model name prefix, or system default
+    resolved_model = model_name or google_model
     resolved_provider = provider or llm_provider
     if model_name and not provider:
-        if "/" in model_name:
-            resolved_provider = "huggingface"
-        elif "gemini" in model_name.lower():
+        m_lower = model_name.lower()
+        if "gemini" in m_lower:
             resolved_provider = "google"
+        elif "llama" in m_lower or "groq" in m_lower or (("qwen" in m_lower) and "/" not in model_name):
+            resolved_provider = "groq"
+        elif "jan" in m_lower:
+            resolved_provider = "jan"
+        elif "/" in model_name:
+            resolved_provider = "huggingface"
+
+    if resolved_provider == "groq":
+        try:
+            from langchain_groq import ChatGroq
+            return ChatGroq(
+                model=resolved_model,
+                groq_api_key=groq_api_key or os.getenv("GROQ_API_KEY"),
+                temperature=0.7,
+            )
+        except Exception:
+            # Fallback to OpenAI client format for Groq
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                model=resolved_model,
+                api_key=groq_api_key or os.getenv("GROQ_API_KEY", "dummy"),
+                base_url="https://api.groq.com/openai/v1",
+            )
+
+    if resolved_provider == "jan":
+        jan_base = os.getenv("JAN_API_BASE", "http://localhost:1337/v1")
+        try:
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                model=resolved_model,
+                api_key="jan",
+                base_url=jan_base,
+            )
+        except Exception:
+            from langchain_community.chat_models import ChatOpenAI
+            return ChatOpenAI(
+                model=resolved_model,
+                openai_api_key="jan",
+                openai_api_base=jan_base,
+            )
 
     if resolved_provider == "huggingface":
-        resolved_model = model_name
         if not resolved_model:
             raise ValueError("model_name must be specified for huggingface provider")
         from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
@@ -93,7 +137,6 @@ def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
         return chat_model
 
     # Default to Google Generative AI
-    resolved_model = model_name or google_model
     return ChatGoogleGenerativeAI(
         model=resolved_model,
         rate_limiter=_google_rate_limiter,

@@ -3,8 +3,12 @@ from .settings import *
 __all__ = [
     "google_api_key",
     "huggingfacehub_api_token",
+    "groq_api_key",
     "llm_provider",
     "google_model",
+    "multipurpose_model",
+    "groq_model",
+    "groq_fallback_model",
     "google_rate_limit_rps",
     "serp_api_key",
     "serp_dev_api_key",
