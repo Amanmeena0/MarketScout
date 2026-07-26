@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI):
             "google_tools": {"url": f"{MCP_BASE}/mcp/google/sse", "transport": "sse"},
             "scraper_tools": {"url": f"{MCP_BASE}/mcp/scraper/sse", "transport": "sse"},
             "youtube_tools": {"url": f"{MCP_BASE}/mcp/youtube/sse", "transport": "sse"},
+            "x_tools": {"url": f"{MCP_BASE}/mcp/x/sse", "transport": "sse"},
         }
     )
     McpState.tools = await client.get_tools()

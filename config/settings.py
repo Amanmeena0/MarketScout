@@ -51,6 +51,12 @@ if raw_rps is not None:
 serp_api_key: Optional[str] = os.getenv("SERP_API_KEY")
 serp_dev_api_key: Optional[str] = os.getenv("SERP_DEV_API_KEY")
 
+x_bearer_token: Optional[str] = os.getenv("X_BEARER_TOKEN") or os.getenv("TWITTER_BEARER_TOKEN")
+x_api_key: Optional[str] = os.getenv("X_API_KEY") or os.getenv("TWITTER_API_KEY")
+x_api_secret: Optional[str] = os.getenv("X_API_SECRET") or os.getenv("X_SECRET_API_KEY") or os.getenv("TWITTER_API_SECRET")
+x_access_token: Optional[str] = os.getenv("X_ACCESS_TOKEN") or os.getenv("TWITTER_ACCESS_TOKEN")
+x_access_token_secret: Optional[str] = os.getenv("X_ACCESS_TOKEN_SECRET") or os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
+
 mongodb_uri: Optional[str] = os.getenv("MONGO_DB_URI", None)
 
 if llm_provider == "google" and not google_api_key:

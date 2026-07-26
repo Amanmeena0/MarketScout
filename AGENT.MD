@@ -181,6 +181,7 @@ MarketScout supports specialized research analysis modes, each powered by tailor
 - **Google Tools**: General web search, news, business intelligence.
 - **Web Scraper Tools**: In-depth web scraping and HTML text extraction.
 - **YouTube Tools**: Video transcript processing and multimedia content extraction.
+- **X (Twitter) Tools**: Recent tweet search, user handle profile lookup, user posts extraction, and tweet engagement metrics.
 - **Lemmy & Bluesky Tools**: Alternative social media data collection.
 
 ### Auto-Summarization Layer (`SummarizedTool`)

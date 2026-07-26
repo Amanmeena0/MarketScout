@@ -127,6 +127,7 @@ The MCP client connects to external SSE endpoints defined in `lifespan`:
     "google_tools": {"url": "http://localhost:5001/mcp/google/sse", "transport": "sse"},
     "scraper_tools": {"url": "http://localhost:5001/mcp/scraper/sse", "transport": "sse"},
     "youtube_tools": {"url": "http://localhost:5001/mcp/youtube/sse", "transport": "sse"},
+    "x_tools": {"url": "http://localhost:5001/mcp/x/sse", "transport": "sse"},
 }
 ```
 
