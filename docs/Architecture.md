@@ -129,8 +129,6 @@ The MCP client connects to external SSE endpoints defined in `lifespan`:
     "reddit_tools": {"url": "http://localhost:5001/mcp/reddit/sse", "transport": "sse"},
     "scraper_tools": {"url": "http://localhost:5001/mcp/scraper/sse", "transport": "sse"},
     "youtube_tools": {"url": "http://localhost:5001/mcp/youtube/sse", "transport": "sse"},
-    "lemmy_tools": {"url": "http://localhost:5001/mcp/lemmy/sse", "transport": "sse"},
-    "bluesky_tools": {"url": "http://localhost:5001/mcp/bluesky/sse", "transport": "sse"},
 }
 ```
 
