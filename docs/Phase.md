@@ -2,7 +2,7 @@
 
 ## Phase 1: Core Server & MCP Infrastructure
 - [x] Setup FastAPI server framework (`server.py`) with CORS middleware.
-- [x] Configure `MultiServerMCPClient` lifecycle to connect to external SSE MCP servers (Google, Reddit, Scraper, YouTube, Lemmy, Bluesky).
+- [x] Configure `MultiServerMCPClient` lifecycle to connect to external SSE MCP servers (Google, Scraper, YouTube, Lemmy, Bluesky).
 - [x] Establish MongoDB connection (`database/db.py`) and standard analysis schemas (`database/schema.py`).
 - [x] Implement secure file serving endpoints (`/reports/{rid}/{file_id}`) with path-traversal prevention.
 

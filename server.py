@@ -47,7 +47,6 @@ async def lifespan(app: FastAPI):
     client = MultiServerMCPClient(
         {
             "google_tools": {"url": f"{MCP_BASE}/mcp/google/sse", "transport": "sse"},
-            "reddit_tools": {"url": f"{MCP_BASE}/mcp/reddit/sse", "transport": "sse"},
             "scraper_tools": {"url": f"{MCP_BASE}/mcp/scraper/sse", "transport": "sse"},
             "youtube_tools": {"url": f"{MCP_BASE}/mcp/youtube/sse", "transport": "sse"},
         }

@@ -50,10 +50,6 @@ if raw_rps is not None:
 
 serp_api_key: Optional[str] = os.getenv("SERP_API_KEY")
 serp_dev_api_key: Optional[str] = os.getenv("SERP_DEV_API_KEY")
-reddit_client_id: Optional[str] = os.getenv("REDDIT_CLIENT_ID")
-reddit_secret: Optional[str] = os.getenv("REDDIT_SECRET")
-reddit_username: Optional[str] = os.getenv("REDDIT_USERNAME")
-reddit_password: Optional[str] = os.getenv("REDDIT_PASSWORD")
 
 mongodb_uri: Optional[str] = os.getenv("MONGO_DB_URI", None)
 
@@ -62,8 +58,6 @@ if llm_provider == "google" and not google_api_key:
 
 if llm_provider == "huggingface" and not huggingfacehub_api_token:
     raise ValueError("Warning: HUGGINGFACEHUB_API_TOKEN is not set but LLM_PROVIDER is 'huggingface'.")
-
-# Reddit credentials are no longer strictly required as we use the keyless public JSON API.
 
 if not serp_dev_api_key:
     raise ValueError("Warning: SERP Dev API Key is not set. Some features may not work.")

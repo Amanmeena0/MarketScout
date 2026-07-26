@@ -7,7 +7,7 @@ This document provides a comprehensive, high-level architectural analysis of the
 ## 1. Project Overview
 
 ### What problem does this project solve?
-Traditional market research is a slow, manual, and fragmented process. Analysts must search search engines, monitor social platforms (Reddit, Bluesky, Lemmy), review videos (YouTube comments and transcripts), and scrape web pages to extract insights. **MarketScout** automates this by orchestrating a multi-agent AI system that collects, cross-references, refines, and compiles deep research reports (Industry, Competitive, Market Gap, Barriers, Sales Forecast, and Target Market analyses) from multiple real-time sources.
+Traditional market research is a slow, manual, and fragmented process. Analysts must search search engines, monitor social platforms (Bluesky, Lemmy), review videos (YouTube comments and transcripts), and scrape web pages to extract insights. **MarketScout** automates this by orchestrating a multi-agent AI system that collects, cross-references, refines, and compiles deep research reports (Industry, Competitive, Market Gap, Barriers, Sales Forecast, and Target Market analyses) from multiple real-time sources.
 
 ### Who are the target users?
 *   **Entrepreneurs & Startups**: Rapidly validating new business ideas.
@@ -81,13 +81,13 @@ The application is built around a **Modular Micro-Services & Agentic** architect
                      │                      │               │                      │               │
                      ▼                      ▼               ▼                      ▼               ▼
              ┌──────────────┐        ┌──────────────┐ ┌───────────┐        ┌──────────────┐ ┌──────────────┐
-             │ google_tools │        │ reddit_tools │ │  scraper  │        │youtube_tools │ │lemmy/bluesky │
-             └──────┬───────┘        └──────┬───────┘ └─────┬─────┘        └──────┬───────┘ └──────┬───────┘
-                    │                       │               │                     │                │
-                    ▼                       ▼               ▼                     ▼                ▼
-                Google APIs             Reddit JSON     Crawl4AI                YouTube        Fediverse/
-              (Search, Trends,         Public Search    Scraper API          Data API &     Bluesky APIs
-              Shopping, News)                                                Transcripts
+             │ google_tools │        │  scraper  │        │youtube_tools │ │lemmy/bluesky │
+             └──────┬───────┘        └─────┬─────┘        └──────┬───────┘ └──────┬───────┘
+                    │                      │                     │                │
+                    ▼                      ▼                     ▼                ▼
+                Google APIs            Crawl4AI                YouTube        Fediverse/
+              (Search, Trends,        Scraper API          Data API &     Bluesky APIs
+              Shopping, News)                                Transcripts
 ```
 
 ### Architectural Tiers:
@@ -96,7 +96,7 @@ The application is built around a **Modular Micro-Services & Agentic** architect
 3.  **Agent Orchestrator (LangGraph)**: The "brain" that executes a cyclic, map-reduce-based graph to compile, reflect, search, and merge information.
 4.  **Database (MongoDB)**: Keeps records of analysis requests, metadata, query configs, timestamps, and current execution statuses.
 5.  **MCP Gateway Server (FastAPI, Port 5001)**: Implements the **Model Context Protocol (MCP)** using the Server-Sent Events (SSE) transport protocol. It aggregates and exposes independent tool servers as a unified registry.
-6.  **FastMCP Tool Servers (Modular)**: Containerized or decoupled tools running searches against Google SerpAPI, scraping web content using Crawl4AI, fetching YouTube transcripts, or scanning Reddit/Lemmy/Bluesky.
+6.  **FastMCP Tool Servers (Modular)**: Containerized or decoupled tools running searches against Google SerpAPI, scraping web content using Crawl4AI, fetching YouTube transcripts, or scanning Lemmy/Bluesky.
 
 ---
 
@@ -139,7 +139,7 @@ User (UI)       Frontend        FastAPI (8000)       MongoDB       LangGraph Eng
 2.  **Job Database Registry**: FastAPI writes the request to MongoDB with status `pending` and returns an `analysis_id` string.
 3.  **Task Launch**: FastAPI creates an asynchronous task (`asyncio.create_task`) and sets up an in-memory queue (`asyncio.Queue`) for streaming messages.
 4.  **WebSocket Binding**: The Frontend opens a WebSocket connection to `/ws/research/{analysis_id}`. The backend listens to the queue and immediately pipes any incoming strings down the socket.
-5.  **Agent ReAct Stage**: The agent first runs a traditional ReAct loop using Google Search, Reddit, etc., to write a preliminary base draft.
+5.  **Agent ReAct Stage**: The agent first runs a traditional ReAct loop using Google Search, web scraping, etc., to write a preliminary base draft.
 6.  **LangGraph Reflection Loop (Self-Correction)**:
     *   **Find Gaps (Node)**: The LLM analyzes the draft, outlines missing statistics, and outputs a JSON containing specific research gaps.
     *   **Continue & Map (Edge)**: Evaluates the gaps and sends parallel (`Send` API) workers to target specific tools (`fill_gaps` Node).
@@ -186,7 +186,6 @@ server/
 ├── mcp_servers/           # Model Context Protocol tier (Port 5001)
 │   ├── main.py            # Mounts all individual tool servers onto unified SSE endpoints
 │   ├── google_tools/      # Google Search, Google Shopping, Google News, and Google Trends
-│   ├── reddit_tools/      # Reddit sentiment analysis and community keyword searches
 │   ├── scraper_tools/     # Crawler engine powered by Crawl4AI
 │   ├── youtube_tools/     # Video search, comment extraction, and transcript retrieval
 │   └── lemmy/bluesky_...  # Mastodon-era social data tool collections
@@ -219,7 +218,7 @@ server/
                          ▼                   ▼
            ┌───────────────────────────────────────────────┐
            │ Map: Parallel FastMCP Tool Executions         │
-           │ (Crawlers, Reddit API, Youtube transcripts)  │
+           │ (Crawlers, Youtube transcripts, Web Scrapes)  │
            └───────────────────────┬───────────────────────┘
                                    │
                                    ▼

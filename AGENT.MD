@@ -179,7 +179,6 @@ MarketScout supports specialized research analysis modes, each powered by tailor
 
 ### Tool Ecosystem (MultiServer MCP Client)
 - **Google Tools**: General web search, news, business intelligence.
-- **Reddit Tools**: Community discussions, user pain points, sentiment analysis.
 - **Web Scraper Tools**: In-depth web scraping and HTML text extraction.
 - **YouTube Tools**: Video transcript processing and multimedia content extraction.
 - **Lemmy & Bluesky Tools**: Alternative social media data collection.

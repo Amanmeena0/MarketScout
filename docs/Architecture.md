@@ -27,10 +27,9 @@ MarketScout is built around a decoupled, multi-stage agentic workflow powered by
    MultiServerMCPClient        Sequential Agent Pipeline        LangGraph Gap-Filling
    (Port 5001 SSE Tools)       (Planner, Tool, Evidence,        Reflection Subgraph
    - Google Search              Report Writer)                  - find_gaps
-   - Reddit                                                     - fill_gaps
-   - Web Scraper                                                - merge_filled_gaps
-   - YouTube Transcripts                                        - route_loop
-   - Lemmy / Bluesky
+   - Web Scraper                                                - fill_gaps
+   - YouTube Transcripts                                        - merge_filled_gaps
+   - Lemmy / Bluesky                                            - route_loop
                                           │
                                           ▼
                                  PDF Exporter & Delivery
@@ -126,7 +125,6 @@ The MCP client connects to external SSE endpoints defined in `lifespan`:
 ```python
 {
     "google_tools": {"url": "http://localhost:5001/mcp/google/sse", "transport": "sse"},
-    "reddit_tools": {"url": "http://localhost:5001/mcp/reddit/sse", "transport": "sse"},
     "scraper_tools": {"url": "http://localhost:5001/mcp/scraper/sse", "transport": "sse"},
     "youtube_tools": {"url": "http://localhost:5001/mcp/youtube/sse", "transport": "sse"},
 }
