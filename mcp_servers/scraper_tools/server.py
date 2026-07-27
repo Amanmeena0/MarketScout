@@ -12,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("Web Scraper Tools")
 
 @mcp.tool()
-def scrape_website_to_markdown(url: str, include_links: bool = True, include_images: bool = False) -> str:
+async def scrape_website_to_markdown(url: str, include_links: bool = True, include_images: bool = False) -> str:
     """
     Scrape a website and return its content in clean markdown format.
     
@@ -25,23 +25,14 @@ def scrape_website_to_markdown(url: str, include_links: bool = True, include_ima
         str: Website content in markdown format with analysis summary
     """
     try:
-        async def crawl_url():
-            async with AsyncWebCrawler() as crawler:
-                result = await crawler.arun(
-                    url=url,
-                    include_images=include_images,
-                    include_links=include_links
-                )
-                return result
-        
-        # Run the async function
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(crawl_url())
-        loop.close()
+        async with AsyncWebCrawler() as crawler:
+            result = await crawler.arun(
+                url=url,
+                include_images=include_images,
+                include_links=include_links
+            )
         
         if not result.success: # type: ignore
-            
             return f"Error: Failed to scrape {url}. Status: {result.status_code}" # type: ignore
         
         # Get the markdown content
@@ -59,16 +50,11 @@ def scrape_website_to_markdown(url: str, include_links: bool = True, include_ima
         analysis += f"**Content Length:** {len(markdown_content)} characters\n"
         analysis += f"**Word Count:** {len(markdown_content.split())} words\n\n"
 
-        # Add any additional analysis here
-
         analysis += "**Content:**\n\n"
         analysis += markdown_content
 
-        
-        
         return analysis
         
     except Exception as e:
-        
-        return f"Error scraping website {url}"
+        return f"Error scraping website {url}: {str(e)}"
 
