@@ -187,7 +187,7 @@ server/
 │   ├── main.py            # Mounts all individual tool servers onto unified SSE endpoints
 │   ├── google_tools/      # Google Search, Google Shopping, Google News, and Google Trends
 │   ├── scraper_tools/     # Crawler engine powered by Crawl4AI
-│   ├── youtube_tools/     # Video search, comment extraction, and transcript retrieval
+│   ├── youtube_tools/     # YouTube video transcript retrieval
 │   └── lemmy/bluesky_...  # Mastodon-era social data tool collections
 ├── prompts/               # Domain-specific instructions
 │   ├── industry.py        # System prompt blueprints for market reports
