@@ -497,27 +497,24 @@ You can access the FastAPI Swagger UI documentation at `http://localhost:8000/do
 
 ## 16. Multi-Model Pipeline & Configuration
 
-MarketScout supports a configurable multi-model pipeline where different steps of the research workflow can be routed to different LLM models (Google Gemini, Groq, Jan AI, and Hugging Face).
+MarketScout supports a configurable multi-model pipeline where different steps of the research workflow can be routed to different LLM models (Google Gemini, Jan AI, and Hugging Face).
 
 ### Multi-Model Settings in `.env`
 You can configure different models for distinct pipeline stages:
 - `MULTIPURPOSE_MODEL`: General purpose fallback / task model (default: `jan-v1-4b`).
 - `GOOGLE_MODEL`: Primary Google Gemini model (default: `gemini-2.0-flash`).
-- `GROQ_MODEL`: Primary Groq model (default: `llama-3.3-70b-versatile`).
-- `GROQ_FALLBACK_MODEL`: Groq fallback model (default: `qwen3-32b`).
 - `PLANNER_MODEL`: Handles initial research planning (default: `gemini-2.0-flash`).
-- `TOOL_ROUTING_MODEL`: Coordinates ReAct tool calls to fetch evidence (default: `llama-3.3-70b-versatile`).
+- `TOOL_ROUTING_MODEL`: Coordinates ReAct tool calls to fetch evidence (default: `gemini-2.0-flash`).
 - `SUMMARIZATION_MODEL`: Compresses large scraper outputs (default: `jan-v1-4b`).
-- `EVIDENCE_ANALYSIS_MODEL`: Synthesizes raw tool outputs into facts and URLs (default: `llama-3.3-70b-versatile`).
+- `EVIDENCE_ANALYSIS_MODEL`: Synthesizes raw tool outputs into facts and URLs (default: `gemini-2.0-flash`).
 - `REPORT_WRITING_MODEL`: Drafts the final report document (default: `gemini-2.0-flash`).
 - `REPORT_REVIEW_MODEL`: Performs quality check/gap reflection (default: `gemini-2.0-flash`).
 
 ### LLM Provider Resolution
 - If the model name contains `gemini`, it resolves to the Google provider.
-- If the model name contains `llama`, `groq`, or `qwen` (without a `/`), it resolves to the Groq provider.
 - If the model name contains `jan`, it resolves to the local Jan AI provider (`http://localhost:1337/v1`).
 - If the model name contains a slash `/` (e.g., `Qwen/Qwen3-32B`), it resolves to the Hugging Face provider.
-- The default fallback provider can be specified using `LLM_PROVIDER` (`google`, `groq`, `jan`, or `huggingface`).
+- The default fallback provider can be specified using `LLM_PROVIDER` (`google`, `jan`, or `huggingface`).
 
 ### Gemini Free Tier Rate Limiting
 To prevent `ResourceExhausted` (`429` / quota exceeded) errors when using Gemini Free Tier, MarketScout includes:

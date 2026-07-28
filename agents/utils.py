@@ -9,12 +9,9 @@ import os
 from config import (
     google_api_key,
     huggingfacehub_api_token,
-    groq_api_key,
     llm_provider,
     google_model,
     multipurpose_model,
-    groq_model,
-    groq_fallback_model,
     google_rate_limit_rps,
     planner_model,
     tool_routing_model,
@@ -82,29 +79,10 @@ def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
         m_lower = model_name.lower()
         if "gemini" in m_lower:
             resolved_provider = "google"
-        elif "llama" in m_lower or "groq" in m_lower or (("qwen" in m_lower) and "/" not in model_name):
-            resolved_provider = "groq"
         elif "jan" in m_lower:
             resolved_provider = "jan"
         elif "/" in model_name:
             resolved_provider = "huggingface"
-
-    if resolved_provider == "groq":
-        try:
-            from langchain_groq import ChatGroq
-            return ChatGroq(
-                model=resolved_model,
-                groq_api_key=groq_api_key or os.getenv("GROQ_API_KEY"),
-                temperature=0.7,
-            )
-        except Exception:
-            # Fallback to OpenAI client format for Groq
-            from langchain_openai import ChatOpenAI
-            return ChatOpenAI(
-                model=resolved_model,
-                api_key=groq_api_key or os.getenv("GROQ_API_KEY", "dummy"),
-                base_url="https://api.groq.com/openai/v1",
-            )
 
     if resolved_provider == "jan":
         jan_base = os.getenv("JAN_API_BASE", "http://localhost:1337/v1")
