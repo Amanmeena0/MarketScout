@@ -20,7 +20,7 @@ Whenever factual information can be obtained via a tool, **tool execution is man
 2. Search APIs (Google Search, News)
 3. Web Scraper Tools
 4. Document Retrieval & Transcripts (YouTube)
-5. Community / Social Feeds (Lemmy, Bluesky)
+5. Social Media (X / Twitter)
 6. LLM Reasoning
 
 > **Strict Rule**: Never use the LLM to guess market figures, revenues, company statistics, or dates.

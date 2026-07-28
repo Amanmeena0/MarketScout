@@ -7,7 +7,7 @@ This document provides a comprehensive, high-level architectural analysis of the
 ## 1. Project Overview
 
 ### What problem does this project solve?
-Traditional market research is a slow, manual, and fragmented process. Analysts must search search engines, monitor social platforms (Bluesky, Lemmy), review videos (YouTube comments and transcripts), and scrape web pages to extract insights. **MarketScout** automates this by orchestrating a multi-agent AI system that collects, cross-references, refines, and compiles deep research reports (Industry, Competitive, Market Gap, Barriers, Sales Forecast, and Target Market analyses) from multiple real-time sources.
+Traditional market research is a slow, manual, and fragmented process. Analysts must search search engines, monitor social platforms (X/Twitter), review videos (YouTube transcripts), and scrape web pages to extract insights. **MarketScout** automates this by orchestrating a multi-agent AI system that collects, cross-references, refines, and compiles deep research reports (Industry, Competitive, Market Gap, Barriers, Sales Forecast, and Target Market analyses) from multiple real-time sources.
 
 ### Who are the target users?
 *   **Entrepreneurs & Startups**: Rapidly validating new business ideas.
@@ -80,14 +80,14 @@ The application is built around a **Modular Micro-Services & Agentic** architect
                      ┌──────────────────────────────────────┼──────────────────────────────────────┐
                      │                      │               │                      │               │
                      ▼                      ▼               ▼                      ▼               ▼
-             ┌──────────────┐        ┌──────────────┐ ┌───────────┐        ┌──────────────┐ ┌──────────────┐
-             │ google_tools │        │  scraper  │        │youtube_tools │ │lemmy/bluesky │
-             └──────┬───────┘        └─────┬─────┘        └──────┬───────┘ └──────┬───────┘
-                    │                      │                     │                │
-                    ▼                      ▼                     ▼                ▼
-                Google APIs            Crawl4AI                YouTube        Fediverse/
-              (Search, Trends,        Scraper API          Data API &     Bluesky APIs
-              Shopping, News)                                Transcripts
+             ┌──────────────┐        ┌──────────────┐ ┌───────────┐        ┌──────────────┐
+             │ google_tools │        │ scraper_tools│ │youtube_tools │     │   x_tools    │
+             └──────┬───────┘        └─────┬────────┘ └──────┬───────┘     └──────┬───────┘
+                    │                      │                 │                    │
+                    ▼                      ▼                 ▼                    ▼
+                Google APIs            Crawl4AI            YouTube           X API v2 &
+              (Search, Trends,        Scraper API        Transcripts       SERP Fallback
+              Shopping, News)
 ```
 
 ### Architectural Tiers:
@@ -96,7 +96,7 @@ The application is built around a **Modular Micro-Services & Agentic** architect
 3.  **Agent Orchestrator (LangGraph)**: The "brain" that executes a cyclic, map-reduce-based graph to compile, reflect, search, and merge information.
 4.  **Database (MongoDB)**: Keeps records of analysis requests, metadata, query configs, timestamps, and current execution statuses.
 5.  **MCP Gateway Server (FastAPI, Port 5001)**: Implements the **Model Context Protocol (MCP)** using the Server-Sent Events (SSE) transport protocol. It aggregates and exposes independent tool servers as a unified registry.
-6.  **FastMCP Tool Servers (Modular)**: Containerized or decoupled tools running searches against Google SerpAPI, scraping web content using Crawl4AI, fetching YouTube transcripts, or scanning Lemmy/Bluesky.
+6.  **FastMCP Tool Servers (Modular)**: Containerized or decoupled tools running searches against Google SerpAPI, scraping web content using Crawl4AI, fetching YouTube transcripts, or querying X (Twitter) via API v2 and SERP web fallback.
 
 ---
 
@@ -161,7 +161,7 @@ User (UI)       Frontend        FastAPI (8000)       MongoDB       LangGraph Eng
     *   Applies a rate-limiter aware model invoker with exponential backoff (`call_llm_with_backof¯ˀf`) to prevent LLM rate limits (`429` / `QuotaExhausted` errors).
 *   **FastMCP Tool Servers (`mcp_servers/`)**:
     *   Runs a separate FastAPI app on port 5001 that mounts Server-Sent Events (SSE) endpoints.
-    *   Exposes tools like web scraping (`crawl4ai`), YouTube transcripts (`youtube_transcript_api`), social feeds (`PRAW` or direct public APIs), and search indexes (SerpAPI).
+    *   Exposes tools like web scraping (`crawl4ai`), YouTube transcripts (`youtube_transcript_api`), social feeds (X API v2 with SERP fallback), and search indexes (SerpAPI).
 *   **Database (MongoDB)**: 
     *   MongoDB holds document states. Since research query structures, output report schemas, and logging arrays vary heavily by industry, a NoSQL structure fits perfectly.
 *   **Background Jobs**: 
@@ -188,7 +188,7 @@ server/
 │   ├── google_tools/      # Google Search, Google Shopping, Google News, and Google Trends
 │   ├── scraper_tools/     # Crawler engine powered by Crawl4AI
 │   ├── youtube_tools/     # YouTube video transcript retrieval
-│   └── lemmy/bluesky_...  # Mastodon-era social data tool collections
+│   └── x_tools/           # X (Twitter) tweet search, profile lookup & engagement metrics
 ├── prompts/               # Domain-specific instructions
 │   ├── industry.py        # System prompt blueprints for market reports
 │   └── competitor.py      # Prompt templates for competitive gap analysis

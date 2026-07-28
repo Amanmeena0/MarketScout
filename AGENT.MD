@@ -92,9 +92,9 @@ Example:
                                  (Generates Research Strategy)
                                                 │
                                                 ▼
-                              Stage 2: Tool Routing ReAct Agent
-                             (MCP Tools: Google, Reddit, YouTube,
-                              Web Scraper, Lemmy, Bluesky, etc.)
+                               Stage 2: Tool Routing ReAct Agent
+                             (MCP Tools: Google, Web Scraper,
+                              YouTube, X / Twitter, etc.)
                                                 │
                                                 ▼
                                 Stage 3: Evidence Analyst Agent
@@ -182,7 +182,6 @@ MarketScout supports specialized research analysis modes, each powered by tailor
 - **Web Scraper Tools**: In-depth web scraping and HTML text extraction.
 - **YouTube Tools**: Video transcript processing and multimedia content extraction.
 - **X (Twitter) Tools**: Recent tweet search, user handle profile lookup, user posts extraction, and tweet engagement metrics.
-- **Lemmy & Bluesky Tools**: Alternative social media data collection.
 
 ### Auto-Summarization Layer (`SummarizedTool`)
 - All MCP tools are wrapped in `SummarizedTool`.

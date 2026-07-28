@@ -29,7 +29,7 @@ MarketScout is built around a decoupled, multi-stage agentic workflow powered by
    - Google Search              Report Writer)                  - find_gaps
    - Web Scraper                                                - fill_gaps
    - YouTube Transcripts                                        - merge_filled_gaps
-   - Lemmy / Bluesky                                            - route_loop
+   - X (Twitter) Tools                                          - route_loop
                                           │
                                           ▼
                                  PDF Exporter & Delivery
@@ -45,7 +45,7 @@ MarketScout is built around a decoupled, multi-stage agentic workflow powered by
 | **Web Server** | FastAPI, Uvicorn | Async HTTP APIs and WebSocket streaming gateway |
 | **Agent Orchestration** | LangGraph, LangChain Core | State machine orchestration, map-reduce fan-out, ReAct loops |
 | **Tool Integration** | MultiServerMCPClient (`langchain_mcp_adapters`) | Standardized Model Context Protocol (MCP) tool integration |
-| **LLM Provider** | `ChatGoogleGenerativeAI` / `ChatHuggingFace` | Multi-model agent reasoning with rate limiting and exponential backoff |
+| **LLM Provider** | `ChatGoogleGenerativeAI` / `ChatGroq` / `ChatOpenAI` (Jan AI) / `ChatHuggingFace` | Multi-model agent reasoning with rate limiting and exponential backoff |
 | **Database** | MongoDB (`pymongo`) | Storing analysis state (`PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`) |
 | **Export Engine** | `MarkdownPdf` | Converting final Markdown reports into PDF documents |
 | **Auto-Summarization** | Custom `SummarizedTool` wrapper | Truncates and synthesizes long tool results (>2000 chars) |

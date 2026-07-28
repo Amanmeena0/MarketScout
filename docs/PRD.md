@@ -36,7 +36,7 @@ MarketScout supports 6 distinct research modes, each backed by custom prompt tem
 
 ### 4.1 Research Orchestration & Pipeline
 - **Planning**: Generate a structured research strategy before firing tool queries.
-- **Tool Routing**: Autonomous ReAct agent querying Google Search, Web Scrapers, YouTube Transcripts, Lemmy, and Bluesky.
+- **Tool Routing**: Autonomous ReAct agent querying Google Search, Web Scrapers, YouTube Transcripts, and X (Twitter) Tools.
 - **Evidence Analysis**: Synthesize raw outputs into verified quantitative facts paired with source URLs.
 - **Drafting & Gap-Filling**: Initial full-length report drafting followed by iterative LangGraph reflection loops ($k$ iterations) to find and research knowledge gaps.
 
