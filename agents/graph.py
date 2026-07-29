@@ -9,8 +9,11 @@ from typing import List, Optional
 from langchain_core.tools import BaseTool, Tool
 from langgraph.config import get_stream_writer
 from langgraph.types import Send
+import logging
 from .state import *
 from .utils import *
+
+logger = logging.getLogger("market_scout.graph")
 
 
 
@@ -36,6 +39,7 @@ async def make_graph(
     )
     
     async def find_gaps(state: AgentState):
+        logger.info("Executing node: find_gaps (iteration %d/%d)", state.get("k", 0), k)
         report = state['report'] 
         rf_prompt = reflection_instructions_prompt.invoke(
             {"report": report}
@@ -65,6 +69,7 @@ async def make_graph(
 
     async def fill_gaps(state: AgentState):
         curr_gap = state["kg_gap"]
+        logger.info("Executing node: fill_gaps for gap: %s", curr_gap[:100] + "..." if len(curr_gap) > 100 else curr_gap)
         
         fill_prompt = fill_gaps_prompt.invoke(
             {"gaps": curr_gap}
@@ -87,6 +92,7 @@ async def make_graph(
         return {"filled_gaps": ans}
 
     async def merge_filled_gaps(state: AgentState):
+        logger.info("Executing node: merge_filled_gaps")
         filled_gaps = state["filled_gaps"]
         report = state["report"]
         
@@ -111,6 +117,7 @@ async def make_graph(
 
     async def final_node(state: AgentState):
         """Final node to return the final report."""
+        logger.info("Executing node: final_node")
         return {"report": state["report"]}
 
     # Build the graph

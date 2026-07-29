@@ -44,6 +44,7 @@ MCP_BASE = "http://localhost:5001"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Initializing MCP client and fetching tools")
     client = MultiServerMCPClient(
         {
             "google_tools": {"url": f"{MCP_BASE}/mcp/google/sse", "transport": "sse"},
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
         }
     )
     McpState.tools = await client.get_tools()
+    logger.info("Successfully fetched %d MCP tools", len(McpState.tools))
 
     yield
 
@@ -98,8 +100,10 @@ async def websocket_research(websocket: WebSocket, request_id: str):
     await websocket.accept()
 
     analysis = db.analyses.find_one({"_id": ObjectId(request_id)})
-    print(f"WebSocket connection for analysis {request_id} with status {analysis}")
+    logger.info("WebSocket connection requested for analysis %s (status: %s)", request_id, analysis.get("status") if analysis else "None")
+    
     if not analysis:
+        logger.warning("WebSocket closed: No analysis found for id %s", request_id)
         await websocket.close(code=1008, reason="No analysis found for this id")
         return
 
@@ -125,6 +129,7 @@ async def websocket_research(websocket: WebSocket, request_id: str):
                 break
             await websocket.send_text(chunk)
     except WebSocketDisconnect:
+        logger.info("WebSocket disconnected for analysis %s", request_id)
         # client closed tab – task keeps running
         pass
 
@@ -146,8 +151,10 @@ def serve_user_file(
     file_path = os.path.join(output_dir, rid, file_id)
 
     if not os.path.isfile(file_path):
+        logger.warning("Report file not found: %s", file_path)
         raise HTTPException(status_code=404, detail="File not found")
 
+    logger.info("Serving report file: %s", file_path)
     return FileResponse(file_path)
 
 
@@ -162,7 +169,10 @@ def get_analysis(analysis_id: str):
 
     analysis = db.analyses.find_one({"_id": object_id})
     if not analysis:
+        logger.warning("Analysis not found: %s", analysis_id)
         raise HTTPException(status_code=404, detail="Analysis not found")
+
+    logger.debug("Fetched analysis: %s", analysis_id)
 
     # Convert ObjectId back to string for JSON serialization
     analysis["_id"] = str(analysis["_id"])
@@ -212,7 +222,9 @@ PROMPTS_REGISTRY = {
 
 @app.post("/analysis")
 async def create_analysis(payload: CreateAnalysisRequest):
+    logger.info("Received request to create analysis of type %s: %s", payload.analysis_type, payload.query)
     if not McpState.tools:
+        logger.error("Analysis creation failed: MCP tools unavailable")
         raise HTTPException(status_code=503, detail="MCP tools unavailable")
 
     doc = AnalysisSchema(
@@ -228,12 +240,14 @@ async def create_analysis(payload: CreateAnalysisRequest):
     
     # Convert ObjectId to string for use as keys and parameters
     analysis_id = str(result.inserted_id)
+    logger.info("Created analysis document with ID: %s", analysis_id)
     
     q: asyncio.Queue = asyncio.Queue()
     queues[analysis_id] = q
 
     prompts_config = PROMPTS_REGISTRY.get(doc.analysis_type)
     if not prompts_config:
+        logger.error("Unsupported analysis type: %s", doc.analysis_type)
         raise HTTPException(status_code=400, detail="Unsupported analysis type")
 
     task = asyncio.create_task(
@@ -252,9 +266,11 @@ async def create_analysis(payload: CreateAnalysisRequest):
     )
     
     tasks[analysis_id] = task
+    logger.info("Started background task for analysis %s", analysis_id)
 
     # clean up when done
     def _cleanup(t):
+        logger.info("Cleaning up queues and tasks for analysis %s", analysis_id)
         queues.pop(analysis_id, None)
         tasks.pop(analysis_id, None)
 

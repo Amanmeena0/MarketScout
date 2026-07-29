@@ -1,8 +1,11 @@
 import os
 import asyncio
+import logging
 from markdown_pdf import MarkdownPdf, Section
 from typing import List, Any, Optional
 from bson import ObjectId
+
+logger = logging.getLogger("market_scout.agent")
 from langchain_core.tools import BaseTool
 from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
@@ -37,6 +40,7 @@ async def create_agent(
 ) -> None:
     # Convert id to string in case it's an ObjectId
     id_str = str(id)
+    logger.info("Starting agent creation for analysis ID: %s, type: %s", id_str, analysisType)
     try:
         # 1. Update status to IN_PROGRESS in MongoDB
         db.analyses.update_one(
@@ -64,6 +68,7 @@ async def create_agent(
         # ----------------------------------------------------------
         # Step 1. PLANNER Step
         # ----------------------------------------------------------
+        logger.info("[%s] Step 1: Creating detailed research plan", id_str)
         await out_queue.put("Step 1: Creating detailed research plan...\n")
         plan_prompt = (
             f"You are a master research planner. Given the user query: '{user_prompt}', create a highly detailed, "
@@ -77,6 +82,7 @@ async def create_agent(
         # ----------------------------------------------------------
         # Step 2. TOOL ROUTING Step (ReAct agent gathers evidence)
         # ----------------------------------------------------------
+        logger.info("[%s] Step 2: Executing tool routing to gather evidence", id_str)
         await out_queue.put("Step 2: Executing tool routing to gather evidence...\n")
         agent_guideline = (
             f"{PROMPT}\n\n"
@@ -109,6 +115,7 @@ async def create_agent(
         # ----------------------------------------------------------
         # Step 3. EVIDENCE ANALYSIS Step (Synthesizes facts)
         # ----------------------------------------------------------
+        logger.info("[%s] Step 3: Conducting deep evidence analysis and synthesis", id_str)
         await out_queue.put("\nStep 3: Conducting deep evidence analysis and synthesis...\n")
         analysis_prompt = (
             f"You are a Senior Evidence Analyst. Meticulously analyze all the raw tool outputs and evidence gathered "
@@ -124,6 +131,7 @@ async def create_agent(
         # ----------------------------------------------------------
         # Step 4. REPORT WRITING Step (Drafts the first report)
         # ----------------------------------------------------------
+        logger.info("[%s] Step 4: Writing initial comprehensive report", id_str)
         await out_queue.put("Step 4: Writing initial comprehensive report...\n")
         writing_prompt = (
             f"You are a professional report writer. Write a comprehensive, detailed markdown report for the query: '{user_prompt}'.\n"
@@ -173,7 +181,7 @@ async def create_agent(
                         await out_queue.put("Tool Call:\n")
                         await out_queue.put(chunk.content + "\n")  # type: ignore
 
-        print("Generating final report...")
+        logger.info("[%s] Generating final report...", id_str)
         pdf = MarkdownPdf()
         pdf.meta["title"] = analysisType.value
         pdf.add_section(Section(final_report, toc=False))
@@ -195,9 +203,10 @@ async def create_agent(
         await out_queue.put(
             f"__OUTPUT_FILE__{output_dir}/{id_str}/{pdf_filename}\n"
         )
+        logger.info("[%s] Agent execution completed successfully. Report saved at %s", id_str, pdf_path)
 
     except Exception as exc:
-        print(f"Agent execution failed for {id_str}: {exc}")
+        logger.error("[%s] Agent execution failed: %s", id_str, exc, exc_info=True)
         # 3. Update status to FAILED in MongoDB
         db.analyses.update_one(
             {"_id": ObjectId(id_str)},
