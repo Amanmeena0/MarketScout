@@ -7,6 +7,7 @@ load_dotenv()
 
 google_api_key: Optional[str] = os.getenv("GOOGLE_API_KEY")
 huggingfacehub_api_token: Optional[str] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
 
 # Provider: 'google', 'huggingface', or 'jan'
 llm_provider: str = os.getenv("LLM_PROVIDER", "").lower()
@@ -15,6 +16,8 @@ if not llm_provider:
         llm_provider = "google"
     elif huggingfacehub_api_token:
         llm_provider = "huggingface"
+    elif groq_api_key:
+        llm_provider = "groq"
     else:
         llm_provider = "google"
 
@@ -59,6 +62,9 @@ if llm_provider == "google" and not google_api_key:
 
 if llm_provider == "huggingface" and not huggingfacehub_api_token:
     raise ValueError("Warning: HUGGINGFACEHUB_API_TOKEN is not set but LLM_PROVIDER is 'huggingface'.")
+
+if llm_provider == "groq" and not groq_api_key:
+    raise ValueError("Warning: GROQ_API_KEY is not set but LLM_PROVIDER is 'groq'.")
 
 if not serp_dev_api_key:
     raise ValueError("Warning: SERP Dev API Key is not set. Some features may not work.")

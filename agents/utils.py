@@ -9,6 +9,7 @@ import os
 from config import (
     google_api_key,
     huggingfacehub_api_token,
+    groq_api_key,
     llm_provider,
     google_model,
     multipurpose_model,
@@ -81,6 +82,8 @@ def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
             resolved_provider = "google"
         elif "jan" in m_lower:
             resolved_provider = "jan"
+        elif "groq" in m_lower or "llama" in m_lower or "mixtral" in m_lower or "gemma" in m_lower:
+            resolved_provider = "groq"
         elif "/" in model_name:
             resolved_provider = "huggingface"
 
@@ -113,6 +116,14 @@ def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
         )
         chat_model = ChatHuggingFace(llm=llm)
         return chat_model
+
+    if resolved_provider == "groq":
+        from langchain_groq import ChatGroq
+        return ChatGroq(
+            model_name=resolved_model,
+            groq_api_key=groq_api_key,
+            max_retries=10
+        )
 
     # Default to Google Generative AI
     return ChatGoogleGenerativeAI(

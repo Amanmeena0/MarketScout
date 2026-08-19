@@ -3,6 +3,7 @@ from .settings import *
 __all__ = [
     "google_api_key",
     "huggingfacehub_api_token",
+    "groq_api_key",
     "llm_provider",
     "google_model",
     "multipurpose_model",
