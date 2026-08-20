@@ -9,7 +9,9 @@ google_api_key: Optional[str] = os.getenv("GOOGLE_API_KEY")
 huggingfacehub_api_token: Optional[str] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
 
-# Provider: 'google', 'huggingface', or 'jan'
+ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+# Provider: 'google', 'huggingface', 'groq', 'jan', or 'ollama'
 llm_provider: str = os.getenv("LLM_PROVIDER", "").lower()
 if not llm_provider:
     if google_api_key:

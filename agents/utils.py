@@ -80,12 +80,31 @@ def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
         m_lower = model_name.lower()
         if "gemini" in m_lower:
             resolved_provider = "google"
+        elif ":" in m_lower or "phi3" in m_lower:
+            resolved_provider = "ollama"
         elif "jan" in m_lower:
             resolved_provider = "jan"
         elif "groq" in m_lower or "llama" in m_lower or "mixtral" in m_lower or "gemma" in m_lower:
             resolved_provider = "groq"
         elif "/" in model_name:
             resolved_provider = "huggingface"
+
+    if resolved_provider == "ollama":
+        from config.settings import ollama_base_url
+        try:
+            from langchain_ollama import ChatOllama
+            return ChatOllama(
+                model=resolved_model,
+                base_url=ollama_base_url,
+                temperature=0
+            )
+        except ImportError:
+            from langchain_community.chat_models import ChatOllama
+            return ChatOllama(
+                model=resolved_model,
+                base_url=ollama_base_url,
+                temperature=0
+            )
 
     if resolved_provider == "jan":
         jan_base = os.getenv("JAN_API_BASE", "http://localhost:1337/v1")

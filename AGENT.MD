@@ -87,22 +87,22 @@ Example:
 ```
                               User Request (Query + Analysis Type)
                                                 │
-                                                ▼
-                                    Stage 1: Planner Agent
-                                 (Generates Research Strategy)
-                                                │
-                                                ▼
-                               Stage 2: Tool Routing ReAct Agent
-                             (MCP Tools: Google, Web Scraper,
-                              YouTube, X / Twitter, etc.)
-                                                │
-                                                ▼
-                                Stage 3: Evidence Analyst Agent
-                                (Synthesizes & Verifies Facts)
-                                                │
-                                                ▼
-                                Stage 4: Report Writer Agent
-                                (Initial Comprehensive Draft)
+                                                  ▼
+                                      Stage 1: Planner Agent
+                                  (Generates Research Strategy)
+                                                  │
+                                                  ▼
+                                Stage 2: Tool Routing ReAct Agent
+                              (MCP Tools: Google, Web Scraper,
+                                YouTube, X / Twitter, etc.)
+                                                  │
+                                                  ▼
+                                  Stage 3: Evidence Analyst Agent
+                                  (Synthesizes & Verifies Facts)
+                                                  │
+                                                  ▼
+                                  Stage 4: Report Writer Agent
+                                  (Initial Comprehensive Draft)
                                                 │
                                                 ▼
              ┌─────────────────────────────────────────────────────────────┐

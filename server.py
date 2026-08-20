@@ -27,9 +27,15 @@ from prompts.sales_forecast import *
 from prompts.target_market_segmentation import *
 
 # ---------- structured logging setup ----------
+from rich.logging import RichHandler
+from rich.console import Console
+
+console = Console()
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    format="%(name)s: %(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(console=console, rich_tracebacks=True, markup=True)]
 )
 logger = logging.getLogger("market_scout")
 
