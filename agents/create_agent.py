@@ -37,10 +37,11 @@ async def create_agent(
     fill_gaps_prompt: Any,
     merge_gaps_prompt: Any,
     model_name: Optional[str] = None,
+    k: int = 3,
 ) -> None:
     # Convert id to string in case it's an ObjectId
     id_str = str(id)
-    logger.info("Starting agent creation for analysis ID: %s, type: %s", id_str, analysisType)
+    logger.info("Starting agent creation for analysis ID: %s, type: %s, k iterations: %d", id_str, analysisType, k)
     try:
         # 1. Update status to IN_PROGRESS in MongoDB
         db.analyses.update_one(
@@ -63,6 +64,7 @@ async def create_agent(
             fill_gaps_prompt=fill_gaps_prompt,
             merge_gaps_prompt=merge_gaps_prompt,
             model_name=model_name,
+            k=k,
         )
 
         # ----------------------------------------------------------

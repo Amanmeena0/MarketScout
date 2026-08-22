@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 import datetime
@@ -57,10 +57,70 @@ class Status(str, Enum):
     FAILED = "failed"
 
 
+class ResearchDepth(str, Enum):
+    QUICK = "quick"
+    COMPREHENSIVE = "comprehensive"
+    DEEP_RESEARCH = "deep_research"
+
+    @property
+    def iterations_count(self) -> int:
+        mapping = {
+            ResearchDepth.QUICK: 2,
+            ResearchDepth.COMPREHENSIVE: 3,
+            ResearchDepth.DEEP_RESEARCH: 5,
+        }
+        return mapping.get(self, 3)
+
+    @classmethod
+    def from_value(cls, value: Optional[str]) -> "ResearchDepth":
+        if not value:
+            return cls.COMPREHENSIVE
+        v = str(value).lower().strip()
+        if v in ("quick", "2"):
+            return cls.QUICK
+        elif v in ("deep_research", "deep", "deepresearch", "5"):
+            return cls.DEEP_RESEARCH
+        return cls.COMPREHENSIVE
+
+
+class ResearchObjective(BaseModel):
+    type: Optional[str] = Field(default="understand_market", description="Objective identifier")
+    description: Optional[str] = Field(default=None, description="Human readable label")
+    custom_objective: Optional[str] = Field(default=None, description="Custom user objective if type == 'other'")
+
+
+class ResearchContext(BaseModel):
+    geography: Optional[str] = None
+    target_customer: Optional[str] = None
+    business_stage: Optional[str] = None
+    time_horizon: Optional[str] = None
+    business_model: Optional[str] = None
+    investment_range: Optional[str] = None
+    competitors: Optional[Any] = None
+    comparison_criteria: Optional[List[str]] = None
+    gap_types: Optional[List[str]] = None
+    barrier_categories: Optional[List[str]] = None
+    forecast_period: Optional[str] = None
+    current_sales: Optional[str] = None
+    historical_sales_data: Optional[str] = None
+    assumptions: Optional[str] = None
+
+    class Config:
+        extra = "allow"
+
+
 class CreateAnalysisRequest(BaseModel):
-    query: str = Field(..., description="The market query or topic")
+    market_topic: Optional[str] = Field(default=None, description="User query / market topic")
+    query: Optional[str] = Field(default=None, description="Backward compatibility query string")
     analysis_type: AnalysisType = Field(..., description="The type of analysis to perform")
-    model_name: Optional[str] = Field(default=None, description="Optional LLM model override for this analysis")
+    geography: Optional[str] = Field(default="Global", description="Geography focus")
+    objective: Optional[ResearchObjective] = Field(default_factory=ResearchObjective)
+    decision_question: Optional[str] = Field(default=None, description="Concrete business decision question")
+    context: Optional[ResearchContext] = Field(default_factory=ResearchContext)
+    analysis_parameters: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    research_depth: Optional[ResearchDepth] = Field(default=ResearchDepth.COMPREHENSIVE)
+    additional_context: Optional[str] = Field(default=None, description="Free-form constraints or notes")
+    model_name: Optional[str] = Field(default=None, description="Optional LLM model override")
 
     @field_validator("analysis_type", mode="before")
     @classmethod
@@ -69,11 +129,35 @@ class CreateAnalysisRequest(BaseModel):
             return AnalysisType.from_stable_id(value)
         return value
 
+    @field_validator("research_depth", mode="before")
+    @classmethod
+    def validate_research_depth(cls, value: Any) -> ResearchDepth:
+        if isinstance(value, ResearchDepth):
+            return value
+        return ResearchDepth.from_value(value)
+
+    @property
+    def effective_topic(self) -> str:
+        return self.market_topic or self.query or "Market Analysis"
+
+    @property
+    def k_iterations(self) -> int:
+        depth = self.research_depth or ResearchDepth.COMPREHENSIVE
+        return depth.iterations_count
+
 
 class AnalysisSchema(BaseModel):
-    id: Optional[str] = Field(default=None, description="Unique identifier for the analysis", alias="_id") 
+    id: Optional[str] = Field(default=None, description="Unique identifier for the analysis", alias="_id")
     query: str = Field(..., description="The market query or topic")
+    market_topic: Optional[str] = Field(default=None)
     analysis_type: AnalysisType = Field(..., description="The type of analysis to perform")
+    geography: Optional[str] = Field(default="Global")
+    objective: Optional[Dict[str, Any]] = None
+    decision_question: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    analysis_parameters: Optional[Dict[str, Any]] = None
+    research_depth: Optional[str] = "comprehensive"
+    additional_context: Optional[str] = None
     model_name: Optional[str] = Field(default=None, description="Optional LLM model override for this analysis")
     status: Status = Field(default=Status.PENDING, description="The current status of the analysis")
     created_at: Optional[str] = Field(
@@ -91,3 +175,4 @@ class AnalysisSchema(BaseModel):
 
     class Config:
         validate_by_name = True
+        extra = "allow"

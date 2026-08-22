@@ -228,14 +228,30 @@ PROMPTS_REGISTRY = {
 
 @app.post("/analysis")
 async def create_analysis(payload: CreateAnalysisRequest):
-    logger.info("Received request to create analysis of type %s: %s", payload.analysis_type, payload.query)
+    topic = payload.effective_topic
+    k_iters = payload.k_iterations
+    logger.info(
+        "Received analysis request: type=%s, topic='%s', depth=%s (k=%d)",
+        payload.analysis_type,
+        topic,
+        payload.research_depth.value if payload.research_depth else "comprehensive",
+        k_iters,
+    )
     if not McpState.tools:
         logger.error("Analysis creation failed: MCP tools unavailable")
         raise HTTPException(status_code=503, detail="MCP tools unavailable")
 
     doc = AnalysisSchema(
-        query=payload.query,
+        query=topic,
+        market_topic=payload.market_topic or topic,
         analysis_type=payload.analysis_type,
+        geography=payload.geography or "Global",
+        objective=payload.objective.model_dump() if payload.objective else None,
+        decision_question=payload.decision_question,
+        context=payload.context.model_dump(exclude_none=True) if payload.context else None,
+        analysis_parameters=payload.analysis_parameters or {},
+        research_depth=payload.research_depth.value if payload.research_depth else "comprehensive",
+        additional_context=payload.additional_context,
         model_name=payload.model_name,
         status=Status.PENDING,
     )
@@ -260,7 +276,7 @@ async def create_analysis(payload: CreateAnalysisRequest):
         create_agent(
             id=analysis_id,
             analysisType=doc.analysis_type,
-            user_prompt=doc.query,
+            user_prompt=topic,
             tools=McpState.tools,
             out_queue=q,
             PROMPT=prompts_config["PROMPT"],
@@ -268,11 +284,12 @@ async def create_analysis(payload: CreateAnalysisRequest):
             fill_gaps_prompt=prompts_config["fill_gaps_prompt"],
             merge_gaps_prompt=prompts_config["merge_gaps_prompt"],
             model_name=doc.model_name,
+            k=k_iters,
         )
     )
     
     tasks[analysis_id] = task
-    logger.info("Started background task for analysis %s", analysis_id)
+    logger.info("Started background task for analysis %s (k=%d)", analysis_id, k_iters)
 
     # clean up when done
     def _cleanup(t):

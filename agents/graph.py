@@ -23,7 +23,7 @@ async def make_graph(
     fill_gaps_prompt,
     merge_gaps_prompt,
     model_name: Optional[str] = None,
-    k: int = 2,
+    k: int = 3,
 ):
     # Resolve specialized models or respect global override
     find_gaps_llm = get_llm(model_name=model_name or report_review_model)
