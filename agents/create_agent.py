@@ -3,18 +3,19 @@ import asyncio
 import logging
 from markdown_pdf import MarkdownPdf, Section
 from typing import List, Any, Optional
-from bson import ObjectId
 
 logger = logging.getLogger("market_scout.agent")
 from langchain_core.tools import BaseTool
 from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 from config.settings import output_dir
-from database.db import db
+from database.storage import get_storage
+from database.memory import record_tool_evidence, record_draft_report
 from database.schema import AnalysisType, Status
 from .utils import (
     get_llm,
     wrap_tools_with_summarizer,
+    extract_llm_text,
     planner_model,
     tool_routing_model,
     evidence_analysis_model,
@@ -39,15 +40,12 @@ async def create_agent(
     model_name: Optional[str] = None,
     k: int = 3,
 ) -> None:
-    # Convert id to string in case it's an ObjectId
     id_str = str(id)
+    storage = get_storage()
     logger.info("Starting agent creation for analysis ID: %s, type: %s, k iterations: %d", id_str, analysisType, k)
     try:
-        # 1. Update status to IN_PROGRESS in MongoDB
-        db.analyses.update_one(
-            {"_id": ObjectId(id_str)},
-            {"$set": {"status": Status.IN_PROGRESS}}
-        )
+        # 1. Update status to IN_PROGRESS in Storage
+        storage.update_analysis(id_str, {"status": Status.IN_PROGRESS.value})
 
         # Resolve specialized component models or respect global override
         planner_llm = get_llm(model_name=model_name or planner_model)
@@ -78,7 +76,7 @@ async def create_agent(
             f"data points/statistics to search for, and the sections of the report to target. Return ONLY the markdown plan."
         )
         plan_msg = await planner_llm.ainvoke([HumanMessage(content=plan_prompt)])
-        research_plan = str(plan_msg.content)
+        research_plan = extract_llm_text(plan_msg)
         await out_queue.put(f"=== Research Plan ===\n{research_plan}\n\n")
 
         # ----------------------------------------------------------
@@ -96,6 +94,7 @@ async def create_agent(
         react_agent = create_react_agent(model=tool_routing_llm, tools=summarized_tools, prompt=agent_guideline)
         
         gathered_evidence = []
+        last_tool_call_info = {}
         async for message in react_agent.astream(
             {"messages": [{"role": "user", "content": f"Execute research plan for: {user_prompt}"}]},
             {"recursion_limit": 50},
@@ -103,14 +102,26 @@ async def create_agent(
         ):
             last = message["messages"][-1]
             if isinstance(last, ToolMessage):
-                await out_queue.put(f"Results:\n{last.content}\n")
-                gathered_evidence.append(f"Tool Result ({last.name}): {last.content}")
+                last_content_str = extract_llm_text(last.content)
+                await out_queue.put(f"Results:\n{last_content_str}\n")
+                gathered_evidence.append(f"Tool Result ({last.name}): {last_content_str}")
+                
+                # Real-Time Evidence Persistence
+                record_tool_evidence(
+                    analysis_id=id_str,
+                    stage="initial_research",
+                    tool_name=last.name or last_tool_call_info.get("name", "tool"),
+                    tool_args=last_tool_call_info.get("args", {}),
+                    tool_result=last_content_str,
+                )
             elif isinstance(last, AIMessage):
-                await out_queue.put(last.content)
+                last_ai_text = extract_llm_text(last.content)
+                await out_queue.put(last_ai_text)
                 for tc in last.tool_calls:
                     await out_queue.put(f"Tool Call:\n {tc['name']}")
                     await out_queue.put(f"Arguments:\n {tc['args']}")
-                gathered_evidence.append(last.content)
+                    last_tool_call_info = {"name": tc["name"], "args": tc["args"]}
+                gathered_evidence.append(last_ai_text)
                 
         evidence_raw_text = "\n\n".join(gathered_evidence)
 
@@ -127,7 +138,7 @@ async def create_agent(
             f"regulatory requirements, and links. Ensure every key claim has a corresponding citation URL."
         )
         analysis_msg = await evidence_analysis_llm.ainvoke([HumanMessage(content=analysis_prompt)])
-        evidence_synthesis = str(analysis_msg.content)
+        evidence_synthesis = extract_llm_text(analysis_msg)
         await out_queue.put(f"=== Evidence Analysis ===\n{evidence_synthesis}\n\n")
 
         # ----------------------------------------------------------
@@ -142,7 +153,10 @@ async def create_agent(
             f"Write the initial comprehensive draft containing all required sections."
         )
         writing_msg = await report_writing_llm.ainvoke([HumanMessage(content=writing_prompt)])
-        init_report = str(writing_msg.content)
+        init_report = extract_llm_text(writing_msg)
+        
+        # Real-time draft report persistence
+        record_draft_report(id_str, init_report)
         await out_queue.put("\nInitial Draft Report Generated.\n")
 
         # ----------------------------------------------------------
@@ -171,6 +185,10 @@ async def create_agent(
                     await out_queue.put(
                         "=" * 30 + "Merging the gathered Resources" + "=" * 30 + "\n"
                     )
+                    # Update intermediate report iteration in storage
+                    intermediate = message["merge_filled_gaps"].get("report")
+                    if intermediate:
+                        record_draft_report(id_str, intermediate)
             else:
                 if "react_agent" in message:
                     msg = message["react_agent"]["messages"][-1]  # type: ignore
@@ -183,23 +201,24 @@ async def create_agent(
                         await out_queue.put("Tool Call:\n")
                         await out_queue.put(chunk.content + "\n")  # type: ignore
 
-        logger.info("[%s] Generating final report...", id_str)
+        logger.info("[%s] Generating final report PDF...", id_str)
         pdf = MarkdownPdf()
         pdf.meta["title"] = analysisType.value
-        pdf.add_section(Section(final_report, toc=False))
+        pdf.add_section(Section(final_report or init_report, toc=False))
 
         os.makedirs(f"{output_dir}/{id_str}", exist_ok=True)
         pdf_filename = f"{analysisType.value}.pdf"
         pdf_path = os.path.join(output_dir, id_str, pdf_filename)
         pdf.save(pdf_path)
 
-        # 2. Update status to COMPLETED and save report path in MongoDB
-        db.analyses.update_one(
-            {"_id": ObjectId(id_str)},
-            {"$set": {
-                "status": Status.COMPLETED,
-                "report_path": f"{id_str}/{pdf_filename}"
-            }}
+        # 2. Update status to COMPLETED in Storage
+        storage.update_analysis(
+            id_str,
+            {
+                "status": Status.COMPLETED.value,
+                "report_path": f"{id_str}/{pdf_filename}",
+                "draft_report": final_report or init_report,
+            }
         )
 
         await out_queue.put(
@@ -209,10 +228,13 @@ async def create_agent(
 
     except Exception as exc:
         logger.error("[%s] Agent execution failed: %s", id_str, exc, exc_info=True)
-        # 3. Update status to FAILED in MongoDB
-        db.analyses.update_one(
-            {"_id": ObjectId(id_str)},
-            {"$set": {"status": Status.FAILED}}
+        # 3. Update status to FAILED while leaving all evidence intact
+        storage.update_analysis(
+            id_str,
+            {
+                "status": Status.FAILED.value,
+                "error_details": f"{type(exc).__name__}: {exc}"
+            }
         )
         await out_queue.put(f"__ERROR__{type(exc).__name__}: {exc}")
 

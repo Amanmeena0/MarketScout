@@ -23,16 +23,16 @@ if not llm_provider:
     else:
         llm_provider = "google"
 
-google_model: str = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
-multipurpose_model: str = os.getenv("MULTIPURPOSE_MODEL", "jan-v1-4b")
+google_model: str = os.getenv("GOOGLE_MODEL", "gemini-3.6-flash")
+multipurpose_model: str = os.getenv("MULTIPURPOSE_MODEL", "gemini-3.6-flash")
 
 # Component-Specific Models Configuration
-planner_model: str = os.getenv("PLANNER_MODEL", "gemini-2.0-flash")
-tool_routing_model: str = os.getenv("TOOL_ROUTING_MODEL", "gemini-2.0-flash")
-summarization_model: str = os.getenv("SUMMARIZATION_MODEL", "jan-v1-4b")
-evidence_analysis_model: str = os.getenv("EVIDENCE_ANALYSIS_MODEL", "gemini-2.0-flash")
-report_writing_model: str = os.getenv("REPORT_WRITING_MODEL", "gemini-2.0-flash")
-report_review_model: str = os.getenv("REPORT_REVIEW_MODEL", "gemini-2.0-flash")
+planner_model: str = os.getenv("PLANNER_MODEL", "gemini-3.6-flash")
+tool_routing_model: str = os.getenv("TOOL_ROUTING_MODEL", "gemini-3.6-flash")
+summarization_model: str = os.getenv("SUMMARIZATION_MODEL", "gemini-3.6-flash")
+evidence_analysis_model: str = os.getenv("EVIDENCE_ANALYSIS_MODEL", "gemini-3.6-flash")
+report_writing_model: str = os.getenv("REPORT_WRITING_MODEL", "gemini-3.6-flash")
+report_review_model: str = os.getenv("REPORT_REVIEW_MODEL", "gemini-3.6-flash")
 
 # Default rate limit for Free Tier is 0.1 rps (1 request per 10 seconds).
 # Set GOOGLE_RATE_LIMIT_RPS to 0, none, or empty to disable the rate limiter.
@@ -57,21 +57,25 @@ x_api_secret: Optional[str] = os.getenv("X_API_SECRET") or os.getenv("X_SECRET_A
 x_access_token: Optional[str] = os.getenv("X_ACCESS_TOKEN") or os.getenv("TWITTER_ACCESS_TOKEN")
 x_access_token_secret: Optional[str] = os.getenv("X_ACCESS_TOKEN_SECRET") or os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
 
+# Storage Configuration: 'local' (folder/json) or 'mongodb'
+storage_backend: str = os.getenv("STORAGE_BACKEND", "local").lower()
+data_dir: str = os.getenv("DATA_DIR", "data")
+output_dir: str = os.getenv("OUTPUT_DIR", "reports")
+
 mongodb_uri: Optional[str] = os.getenv("MONGO_DB_URI", None)
 
 if llm_provider == "google" and not google_api_key:
-    raise ValueError("Warning: Google API Key is not set but LLM_PROVIDER is 'google'.")
+    warnings.warn("Warning: Google API Key is not set but LLM_PROVIDER is 'google'.")
 
 if llm_provider == "huggingface" and not huggingfacehub_api_token:
-    raise ValueError("Warning: HUGGINGFACEHUB_API_TOKEN is not set but LLM_PROVIDER is 'huggingface'.")
+    warnings.warn("Warning: HUGGINGFACEHUB_API_TOKEN is not set but LLM_PROVIDER is 'huggingface'.")
 
 if llm_provider == "groq" and not groq_api_key:
-    raise ValueError("Warning: GROQ_API_KEY is not set but LLM_PROVIDER is 'groq'.")
+    warnings.warn("Warning: GROQ_API_KEY is not set but LLM_PROVIDER is 'groq'.")
 
 if not serp_dev_api_key:
-    raise ValueError("Warning: SERP Dev API Key is not set. Some features may not work.")
+    warnings.warn("Warning: SERP Dev API Key is not set. Some features may not work.")
 
-if not mongodb_uri:
-    raise ValueError("Warning: MongoDB URI is not set. Database operations will not work.")
-
-output_dir: str = os.getenv("OUTPUT_DIR", "reports")
+if storage_backend == "mongodb" and not mongodb_uri:
+    warnings.warn("Warning: STORAGE_BACKEND is 'mongodb' but MONGO_DB_URI is not set. Defaulting to local storage.")
+    storage_backend = "local"

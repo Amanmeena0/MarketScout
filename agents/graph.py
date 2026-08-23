@@ -71,25 +71,29 @@ async def make_graph(
         curr_gap = state["kg_gap"]
         logger.info("Executing node: fill_gaps for gap: %s", curr_gap[:100] + "..." if len(curr_gap) > 100 else curr_gap)
         
-        fill_prompt = fill_gaps_prompt.invoke(
-            {"gaps": curr_gap}
-        )
+        try:
+            fill_prompt = fill_gaps_prompt.invoke(
+                {"gaps": curr_gap}
+            )
 
-        response = react_agent.astream(
-            {"messages": [{"role": "user", "content": fill_prompt.to_string()}]},
-            stream_mode=["values"],
-        )
-        writer = get_stream_writer()  
-        ans = ""
+            response = react_agent.astream(
+                {"messages": [{"role": "user", "content": fill_prompt.to_string()}]},
+                stream_mode=["values"],
+            )
+            writer = get_stream_writer()  
+            ans = ""
 
-        async for stream_mode, message in response:
-            if stream_mode == "values":
-                last = message["messages"] # type: ignore
-                if isinstance(last[-1], AIMessage):
-                    ans = message["messages"][-1].content  # type: ignore
-                    writer({'react_agent': message}) 
+            async for stream_mode, message in response:
+                if stream_mode == "values":
+                    last = message["messages"] # type: ignore
+                    if isinstance(last[-1], AIMessage):
+                        ans = message["messages"][-1].content  # type: ignore
+                        writer({'react_agent': message}) 
 
-        return {"filled_gaps": ans}
+            return {"filled_gaps": ans}
+        except Exception as e:
+            logger.warning("Error while filling gap '%s': %s", curr_gap[:60], e)
+            return {"filled_gaps": f"Gap investigation note: Could not complete search for '{curr_gap[:100]}...' due to transient error ({e})."}
 
     async def merge_filled_gaps(state: AgentState):
         logger.info("Executing node: merge_filled_gaps")

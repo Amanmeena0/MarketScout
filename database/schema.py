@@ -146,6 +146,15 @@ class CreateAnalysisRequest(BaseModel):
         return depth.iterations_count
 
 
+class SearchEvidenceItem(BaseModel):
+    timestamp: str = Field(default_factory=lambda: datetime.datetime.now().ctime())
+    stage: str = "initial_research"  # 'initial_research' or 'fill_gaps'
+    tool_name: str
+    query_or_url: str = ""
+    content_snippet: str = ""
+    extracted_urls: List[str] = []
+
+
 class AnalysisSchema(BaseModel):
     id: Optional[str] = Field(default=None, description="Unique identifier for the analysis", alias="_id")
     query: str = Field(..., description="The market query or topic")
@@ -165,6 +174,9 @@ class AnalysisSchema(BaseModel):
         description="The timestamp when the analysis was created"
     )
     report_path: Optional[str] = Field(default=None, description="Path to the generated report file")
+    draft_report: Optional[str] = Field(default=None, description="Intermediate report draft markdown")
+    evidence: List[SearchEvidenceItem] = Field(default_factory=list, description="Real-time search outputs & extracted URLs")
+    error_details: Optional[str] = Field(default=None, description="Diagnostic error details if failed")
 
     @field_validator("analysis_type", mode="before")
     @classmethod

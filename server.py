@@ -16,7 +16,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from uvicorn import run
 
 from config.settings import output_dir
-from database.db import db
+from database.storage import get_storage
 from agents.create_agent import create_agent
 from database.schema import AnalysisSchema, AnalysisType, Status, CreateAnalysisRequest
 from prompts.industry import *
@@ -105,7 +105,8 @@ class ResearchRequest(BaseModel):
 async def websocket_research(websocket: WebSocket, request_id: str):
     await websocket.accept()
 
-    analysis = db.analyses.find_one({"_id": ObjectId(request_id)})
+    storage = get_storage()
+    analysis = storage.get_analysis(request_id)
     logger.info("WebSocket connection requested for analysis %s (status: %s)", request_id, analysis.get("status") if analysis else "None")
     
     if not analysis:
@@ -113,11 +114,12 @@ async def websocket_research(websocket: WebSocket, request_id: str):
         await websocket.close(code=1008, reason="No analysis found for this id")
         return
 
-    if analysis["status"] == Status.COMPLETED:
+    status_val = analysis.get("status")
+    if status_val == Status.COMPLETED or status_val == Status.COMPLETED.value:
         await websocket.close(code=1008, reason="Analysis already completed")
         return
 
-    if analysis["status"] == Status.FAILED:
+    if status_val == Status.FAILED or status_val == Status.FAILED.value:
         await websocket.close(code=1008, reason="Analysis failed")
         return
 
@@ -149,11 +151,7 @@ def serve_user_file(
     if ".." in file_id:
         raise HTTPException(status_code=400, detail="Bad path")
 
-    # 2. Authorization: token sub must match url user_id
-    # if token_user != user_id:
-    #     raise HTTPException(status_code=403, detail="Forbidden")
-
-    # 3. Build safe path
+    # 2. Build safe path
     file_path = os.path.join(output_dir, rid, file_id)
 
     if not os.path.isfile(file_path):
@@ -166,22 +164,13 @@ def serve_user_file(
 
 @app.get("/analysis/{analysis_id}")
 def get_analysis(analysis_id: str):
-    try:
-        object_id = ObjectId(analysis_id)
-    except InvalidId:
-        raise HTTPException(
-            status_code=400, detail="Invalid analysis ID format"
-        )
-
-    analysis = db.analyses.find_one({"_id": object_id})
+    storage = get_storage()
+    analysis = storage.get_analysis(analysis_id)
     if not analysis:
         logger.warning("Analysis not found: %s", analysis_id)
         raise HTTPException(status_code=404, detail="Analysis not found")
 
     logger.debug("Fetched analysis: %s", analysis_id)
-
-    # Convert ObjectId back to string for JSON serialization
-    analysis["_id"] = str(analysis["_id"])
     return analysis
 
 
@@ -256,12 +245,10 @@ async def create_analysis(payload: CreateAnalysisRequest):
         status=Status.PENDING,
     )
 
-    # Convert to dict for MongoDB insertion (without the id field)
+    # Convert to dict for Storage insertion
     doc_dict = doc.model_dump(exclude={"id"}, by_alias=False)
-    result = db.analyses.insert_one(doc_dict)
-    
-    # Convert ObjectId to string for use as keys and parameters
-    analysis_id = str(result.inserted_id)
+    storage = get_storage()
+    analysis_id = storage.save_analysis(doc_dict)
     logger.info("Created analysis document with ID: %s", analysis_id)
     
     q: asyncio.Queue = asyncio.Queue()

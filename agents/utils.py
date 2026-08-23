@@ -1,6 +1,6 @@
 import random
 import time
-from typing import List, Optional
+from typing import List, Optional, Any
 from google.api_core.exceptions import ServiceUnavailable, ResourceExhausted
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.rate_limiters import InMemoryRateLimiter
@@ -48,18 +48,26 @@ def call_llm_with_backoff(llm, messages, max_retries=7, base_delay=4):
             else:
                 raise e
 
-def call_tool_llm_with_backoff(tool_llm, messages, max_retries=7, base_delay=4):
-    """Call tool-bound LLM with exponential backoff retry logic, catching rate limits."""
-    for attempt in range(max_retries):
-        try:
-            return tool_llm.invoke(messages)
-        except Exception as e:
-            if _is_transient_error(e) and attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                print(f"Transient error ({type(e).__name__}) hit. Retrying in {delay:.2f} seconds... (attempt {attempt + 1}/{max_retries})")
-                time.sleep(delay)
+def extract_llm_text(response: Any) -> str:
+    """Safely extracts text content from string, AIMessage, or list-of-dict content responses."""
+    if not response:
+        return ""
+    content = getattr(response, "content", response)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and "text" in item:
+                parts.append(item["text"])
+            elif isinstance(item, str):
+                parts.append(item)
+            elif hasattr(item, "text"):
+                parts.append(item.text)
             else:
-                raise e
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(content)
 
 
 # Setup a shared global rate limiter for Google Generative AI to prevent ResourceExhausted errors across concurrent requests.
@@ -177,24 +185,30 @@ class SummarizedTool(BaseTool):
     original_tool: BaseTool
 
     def _run(self, *args, **kwargs) -> str:
-        tool_input = kwargs if kwargs else (args[0] if args else {})
-        res = self.original_tool.invoke(tool_input)
-        res_str = str(res)
-        if len(res_str) > 2000:
-            res_str = summarize_text(res_str)
-        return res_str
+        try:
+            tool_input = kwargs if kwargs else (args[0] if args else {})
+            res = self.original_tool.invoke(tool_input)
+            res_str = str(res)
+            if len(res_str) > 2000:
+                res_str = summarize_text(res_str)
+            return res_str
+        except Exception as e:
+            return f"Error executing tool {self.name}: {e}. Skipping and proceeding with available data."
         
     async def _arun(self, *args, **kwargs) -> str:
-        tool_input = kwargs if kwargs else (args[0] if args else {})
-        res = await self.original_tool.ainvoke(tool_input)
-        res_str = str(res)
-        if len(res_str) > 2000:
-            res_str = summarize_text(res_str)
-        return res_str
+        try:
+            tool_input = kwargs if kwargs else (args[0] if args else {})
+            res = await self.original_tool.ainvoke(tool_input)
+            res_str = str(res)
+            if len(res_str) > 2000:
+                res_str = summarize_text(res_str)
+            return res_str
+        except Exception as e:
+            return f"Error executing tool {self.name}: {e}. Skipping and proceeding with available data."
 
 
 def wrap_tools_with_summarizer(tools: List[BaseTool]) -> List[BaseTool]:
-    """Wraps tools so that large results are summarized using the configured summarization model."""
+    """Wraps tools so that large results are summarized and connection errors are handled gracefully."""
     wrapped = []
     for tool in tools:
         wrapped.append(
@@ -203,6 +217,7 @@ def wrap_tools_with_summarizer(tools: List[BaseTool]) -> List[BaseTool]:
                 description=tool.description,
                 args_schema=tool.args_schema,
                 original_tool=tool,
+                handle_tool_error=True,
             )
         )
     return wrapped
