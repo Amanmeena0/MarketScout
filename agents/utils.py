@@ -82,20 +82,27 @@ if google_rate_limit_rps is not None and google_rate_limit_rps > 0:
 
 def get_llm(model_name: Optional[str] = None, provider: Optional[str] = None):
     # Determine provider based on parameter, model name prefix, or system default
-    resolved_model = model_name or google_model
     resolved_provider = provider or llm_provider
     if model_name and not provider:
         m_lower = model_name.lower()
         if "gemini" in m_lower:
             resolved_provider = "google"
-        elif ":" in m_lower or "phi3" in m_lower:
-            resolved_provider = "ollama"
+        elif ":" in m_lower or "phi3" in m_lower or "gemma" in m_lower or "llama" in m_lower:
+            resolved_provider = "ollama" if llm_provider in ("ollama", "jan") else llm_provider
         elif "jan" in m_lower:
             resolved_provider = "jan"
-        elif "groq" in m_lower or "llama" in m_lower or "mixtral" in m_lower or "gemma" in m_lower:
+        elif "groq" in m_lower or "mixtral" in m_lower:
             resolved_provider = "groq"
         elif "/" in model_name:
             resolved_provider = "huggingface"
+
+    default_for_provider = {
+        "google": google_model,
+        "ollama": multipurpose_model,
+        "groq": "llama-3.3-70b-versatile",
+        "jan": multipurpose_model,
+    }
+    resolved_model = model_name or default_for_provider.get(resolved_provider, multipurpose_model)
 
     if resolved_provider == "ollama":
         from config.settings import ollama_base_url
@@ -175,7 +182,7 @@ def summarize_text(text: str, max_chars: int = 1500) -> str:
             f"Text to summarize:\n{text}"
         )
         summary_response = call_llm_with_backoff(llm, [HumanMessage(content=prompt)])
-        return str(summary_response.content) if summary_response else text
+        return extract_llm_text(summary_response) if summary_response else text
     except Exception as e:
         print(f"Failed to summarize text: {e}")
         return text[:max_chars] + "... [Truncated due to summarization failure]"

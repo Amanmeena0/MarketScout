@@ -48,22 +48,52 @@ async def make_graph(
         response = call_llm_with_backoff(
             find_gaps_llm, [HumanMessage(content=rf_prompt.to_string())]
         )
-        response = str(response.content) if response else "No Gaps Found"
-
-        if response.startswith("```json"):
-            response = response[7:-3]  # Remove the markdown code block formatting
-
-        return {"knowledge_gaps": response}
+        response_text = extract_llm_text(response) if response else "No Gaps Found"
+        return {"knowledge_gaps": response_text}
 
     async def continue_to_fill_gaps(state: AgentState):
-        gaps = json.loads(state["knowledge_gaps"])
+        raw_text = state.get("knowledge_gaps", "")
+        gaps = []
+        
+        # Robust JSON extraction: look for json code block or bracket array
+        try:
+            # 1. Try stripping markdown blocks
+            clean = raw_text.strip()
+            if "```json" in clean:
+                clean = clean.split("```json")[1].split("```")[0].strip()
+            elif "```" in clean:
+                clean = clean.split("```")[1].split("```")[0].strip()
+
+            # 2. Extract first JSON array [ ... ]
+            start_idx = clean.find("[")
+            end_idx = clean.rfind("]")
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = clean[start_idx:end_idx + 1]
+                gaps = json.loads(json_str)
+            else:
+                gaps = json.loads(clean)
+        except Exception as e:
+            logger.warning("Could not parse gaps as JSON (%s). Parsing lines as fallback.", e)
+            # Fallback: Treat raw lines as text gaps
+            lines = [line.strip("- *#") for line in raw_text.split("\n") if len(line.strip()) > 20]
+            gaps = [{"section": "General", "gap_description": line, "impact": "High"} for line in lines[:3]]
+
+        if not isinstance(gaps, list):
+            gaps = []
+
         knowledge_gaps = []
         for kg in gaps:
-            section = kg['section']
-            gap_description = kg['gap_description'] 
-            impact = kg['impact']
+            if isinstance(kg, dict):
+                section = str(kg.get('section', 'General'))
+                gap_description = str(kg.get('gap_description', ''))
+                impact = str(kg.get('impact', 'Medium'))
+                knowledge_gaps.append(f"{section}\n{gap_description}\n{impact}")
+            elif isinstance(kg, str) and len(kg.strip()) > 10:
+                knowledge_gaps.append(kg.strip())
 
-            knowledge_gaps.append(section + "\n" + gap_description + "\n" + impact)
+        if not knowledge_gaps:
+            logger.info("No actionable gaps found during reflection. Terminating iteration.")
+            return []
 
         return [Send("fill_gaps", {'kg_gap': kg}) for kg in knowledge_gaps]
 
