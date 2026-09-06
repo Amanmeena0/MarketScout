@@ -45,7 +45,7 @@ class McpState:
     tools: List[BaseTool] = []
 
 
-MCP_BASE = "http://localhost:5001"
+MCP_BASE = os.getenv("MCP_BASE", "http://127.0.0.1:5001")
 
 
 @asynccontextmanager

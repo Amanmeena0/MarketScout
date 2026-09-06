@@ -13,10 +13,10 @@ from x_tools import x_mcp
 
 app = FastAPI(title="Market Research MCP Server", version="1.0.0")
 
-app.mount("/mcp/google/",  google_mcp.sse_app())
-app.mount("/mcp/scraper/", scraper_mcp.sse_app())
-app.mount("/mcp/youtube/", youtube_mcp.sse_app())
-app.mount("/mcp/x/",       x_mcp.sse_app())
+app.mount("/mcp/google",  google_mcp.sse_app())
+app.mount("/mcp/scraper", scraper_mcp.sse_app())
+app.mount("/mcp/youtube", youtube_mcp.sse_app())
+app.mount("/mcp/x",       x_mcp.sse_app())
 
 available_servers = []
 

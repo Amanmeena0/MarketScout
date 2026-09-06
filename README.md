@@ -1,38 +1,49 @@
 # Architectural Documentation: MarketScout
 
-This document provides a comprehensive, high-level architectural analysis of the **MarketScout** system. It is designed to give you a clear mental model of how the components interact, why the system is designed this way, and how to explain this architecture confidently in technical interviews or to other engineers.
+This document provides a comprehensive, production-grade architectural and technical analysis of the **MarketScout** system. It details the multi-agent orchestration state machine, tool execution layer via the Model Context Protocol (MCP), multi-model LLM routing, real-time evidence persistence, dual-storage backend, and step-by-step developer workflows.
 
 ---
 
 ## 1. Project Overview
 
 ### What problem does this project solve?
-Traditional market research is a slow, manual, and fragmented process. Analysts must search search engines, monitor social platforms (X/Twitter), review videos (YouTube transcripts), and scrape web pages to extract insights. **MarketScout** automates this by orchestrating a multi-agent AI system that collects, cross-references, refines, and compiles deep research reports (Industry, Competitive, Market Gap, Barriers, Sales Forecast, and Target Market analyses) from multiple real-time sources.
+Traditional market research is slow, fragmented, and prone to hallucinations. Analysts must search search engines, monitor social platforms (X/Twitter), inspect video transcripts (YouTube), and scrape web pages to extract insights. 
 
-### Who are the target users?
-*   **Entrepreneurs & Startups**: Rapidly validating new business ideas.
-*   **Product Managers**: Analyzing market gaps, competitor features, and barrier entries.
-*   **Market Analysts**: Generating structured research briefings without manual copy-pasting.
+**MarketScout** automates deep market intelligence by orchestrating a multi-agent AI system that plans research, executes specialized tools via MCP, verifies and synthesizes evidence, drafts comprehensive reports, reflects on knowledge gaps through a LangGraph Map-Reduce loop, and exports polished PDF documents.
 
-### What is the main workflow?
+### Research Analysis Workflows
+MarketScout supports 6 distinct market research workflows:
+1. **Industry Analysis** (`industry_analysis` / `Industry Report`): Market size, growth drivers, value chain, regulatory landscape, and trends.
+2. **Competitor Analysis** (`competitor_analysis` / `Competitor Report`): Competitor profiling, feature matrices, pricing models, strengths, weaknesses, and market positioning.
+3. **Market Gap Analysis** (`market_gap_analysis` / `Market Gap Report`): Unmet customer needs, underserved segments, technological voids, and product-market fit opportunities.
+4. **Target Market Segmentation** (`target_market_analysis` / `Target Market Report`): Demographic, firmographic, psychographic, and behavioral customer segmentation.
+5. **Barrier Assessment** (`barrier_analysis` / `Barrier Report`): Regulatory barriers, capital requirements, distribution moats, switching costs, and IP hurdles.
+6. **Sales Forecasting** (`sales_forecasting` / `Sales Forecast Report`): Multi-scenario demand projections (Bear/Base/Bull), unit economics, pricing elasticity, and revenue drivers.
+
+### High-Level Workflow
 ```mermaid
-flowchart LR
-    A[User Query] --> B[FastAPI Backend]
-    B --> C[MongoDB Log Entry]
-    B --> D[LangGraph Engine]
-    D --> E[MCP Tool Servers]
-    E --> F[Real-Time APIs/Scrapers]
-    F --> D
-    D --> G[Reflection & Gap Filling]
-    G --> H[PDF Generation]
-    H --> I[Download Report]
+flowchart TD
+    A[User Request / Topic] --> B[FastAPI Backend :8000]
+    B --> C[(Storage Backend: Local JSON / MongoDB)]
+    B --> D[Step 1: Planner Agent]
+    D --> E[Step 2: Tool Routing ReAct Agent]
+    E --> F[FastMCP Tool Gateway :5001]
+    F --> G[Google, Crawl4AI, YouTube, X/Twitter]
+    G --> E
+    E --> H[Atomic Evidence & URL Persistence]
+    H --> I[Step 3: Evidence Analysis & Synthesis]
+    I --> J[Step 4: Initial Report Drafting]
+    J --> K[Step 5: LangGraph Reflection & Gap Filling Loop]
+    K -->|Find Gaps -> Map: Fill Gaps -> Reduce: Merge| K
+    K --> L[Markdown-to-PDF Generator]
+    L --> M[Download Report & Real-Time Logs]
 ```
 
 ---
 
 ## 2. Overall Architecture
 
-The application is built around a **Modular Micro-Services & Agentic** architecture. It separates the execution of the agent state machine (core brain) from the tool execution layer (data collectors) using the **Model Context Protocol (MCP)**.
+MarketScout is built around a **Modular Micro-Services & Agentic Architecture**. It separates the execution of the agent state machine (the orchestrator) from the tool execution layer (data collectors) using the **Model Context Protocol (MCP)** over Server-Sent Events (SSE).
 
 ```
                             ┌────────────────┐
@@ -40,132 +51,156 @@ The application is built around a **Modular Micro-Services & Agentic** architect
                             └───────┬────────┘
                                     │ HTTP / WebSocket
                                     ▼
-                     ┌──────────────────────────────┐
-                     │   Frontend (React/Next.js)   │
-                     └──────────────┬───────────────┘
-                                    │
-                       HTTP POST    │ WebSocket
-                       /analysis    │ /ws/research/{id}
-                                    ▼
-                     ┌──────────────────────────────┐
-                     │      Backend (FastAPI)       │
-                     │          (Port 8000)         │
-                     └─────┬────────┬────────┬──────┘
-                           │        │        │
-                           │        │        │ Run LangGraph Engine
-                Write/Read │        │        └──────────────┐
-                 Metadata  │        │                       │
-                           ▼        │ Serve PDF             ▼
-                     ┌───────────┐  │ /reports/... ┌─────────────────┐
-                     │  MongoDB  │  │              │    LangGraph    │
-                     │  Database │  │              │  Agent workflow │
-                     └───────────┘  │              └────────┬────────┘
-                                    ▼                       │
-                             ┌─────────────┐                │ Run Tools
-                             │ Local PDF   │◄───────────────┤ (MCP SSE Client)
-                             │ Storage     │ (Saves PDF)    │
-                             └─────────────┘                ▼
-                                                   ┌─────────────────┐
-                                                   │   MCP Gateway   │
-                                                   │   (FastAPI)     │
-                                                   │   (Port 5001)   │
-                                                   └────────┬────────┘
-                                                            │ SSE Transports
-                                                            ▼
-                                                   ┌─────────────────┐
-                                                   │   FastMCP Tool  │
-                                                   │     Servers     │
-                                                   └────────┬────────┘
-                                                            │
-                     ┌──────────────────────────────────────┼──────────────────────────────────────┐
-                     │                      │               │                      │               │
-                     ▼                      ▼               ▼                      ▼               ▼
-             ┌──────────────┐        ┌──────────────┐ ┌───────────┐        ┌──────────────┐
-             │ google_tools │        │ scraper_tools│ │youtube_tools │     │   x_tools    │
-             └──────┬───────┘        └─────┬────────┘ └──────┬───────┘     └──────┬───────┘
-                    │                      │                 │                    │
-                    ▼                      ▼                 ▼                    ▼
-                Google APIs            Crawl4AI            YouTube           X API v2 &
-              (Search, Trends,        Scraper API        Transcripts       SERP Fallback
-              Shopping, News)
+                      ┌──────────────────────────────┐
+                      │   Frontend (React/Next.js)   │
+                      │    or CLI / Terminal Tool    │
+                      └──────────────┬───────────────┘
+                                     │
+                        HTTP POST    │ WebSocket
+                        /analysis    │ /ws/research/{id}
+                                     ▼
+                      ┌──────────────────────────────┐
+                      │      Backend (FastAPI)       │
+                      │          (Port 8000)         │
+                      └─────┬────────┬────────┬──────┘
+                            │        │        │
+                            │        │        │ Run LangGraph Engine
+                Write/Read  │        │        └──────────────┐
+                Metadata &  │        │                       │
+                Evidence    │        │ Serve PDF             ▼
+                            ▼        │ /reports/... ┌─────────────────┐
+                      ┌───────────┐  │              │    LangGraph    │
+                      │  Storage  │  │              │  Agent workflow │
+                      │  Backend  │  │              └────────┬────────┘
+                      │(Local/DB) │  │                       │
+                      └───────────┘  ▼                       │ Run Tools
+                              ┌─────────────┐                │ (MCP SSE Client)
+                              │ Local PDF   │◄───────────────┤ 
+                              │ Storage     │ (Saves PDF)    │
+                              └─────────────┘                ▼
+                                                    ┌─────────────────┐
+                                                    │   MCP Gateway   │
+                                                    │   (FastAPI)     │
+                                                    │   (Port 5001)   │
+                                                    └────────┬────────┘
+                                                             │ SSE Transports
+                                                             ▼
+                                                    ┌─────────────────┐
+                                                    │   FastMCP Tool  │
+                                                    │     Servers     │
+                                                    └────────┬────────┘
+                                                             │
+                      ┌──────────────────────────────────────┼──────────────────────────────────────┐
+                      │                      │               │                      │               │
+                      ▼                      ▼               ▼                      ▼               ▼
+              ┌──────────────┐        ┌──────────────┐ ┌───────────┐        ┌──────────────┐
+              │ google_tools │        │ scraper_tools│ │youtube_tools │     │   x_tools    │
+              └──────┬───────┘        └─────┬────────┘ └──────┬───────┘     └──────┬───────┘
+                     │                      │                 │                    │
+                     ▼                      ▼                 ▼                    ▼
+                 Google APIs            Crawl4AI            YouTube           X API v2 &
+               (Search, Trends,        Scraper API        Transcripts       SERP Fallback
+               Shopping, News)
 ```
 
 ### Architectural Tiers:
-1.  **Frontend (React/Next.js)**: Responsible for user input, displaying a live agent execution log (streamed via WebSockets), and rendering the final report downloads.
-2.  **Backend (FastAPI, Port 8000)**: Serves as the orchestrator. Handles REST endpoints for starting analyses and retrieving completed files, runs the WebSocket endpoint for progress logs, and spawns asynchronous Python worker tasks.
-3.  **Agent Orchestrator (LangGraph)**: The "brain" that executes a cyclic, map-reduce-based graph to compile, reflect, search, and merge information.
-4.  **Database (MongoDB)**: Keeps records of analysis requests, metadata, query configs, timestamps, and current execution statuses.
-5.  **MCP Gateway Server (FastAPI, Port 5001)**: Implements the **Model Context Protocol (MCP)** using the Server-Sent Events (SSE) transport protocol. It aggregates and exposes independent tool servers as a unified registry.
-6.  **FastMCP Tool Servers (Modular)**: Containerized or decoupled tools running searches against Google SerpAPI, scraping web content using Crawl4AI, fetching YouTube transcripts, or querying X (Twitter) via API v2 and SERP web fallback.
+1. **Frontend / Terminal Client**: 
+   - Interactive React/Next.js UI or terminal test harness (`tests/run_terminal_research.py`).
+   - Submits structured analysis requests, listens to real-time execution logs via WebSockets, and downloads generated PDF reports.
+2. **Backend Gateway (FastAPI, Port 8000)**: 
+   - REST API handling request validation (`CreateAnalysisRequest`), storage persistence, PDF file serving, and WebSocket streaming.
+   - Spawns background worker tasks via `asyncio.create_task` and dispatches streaming updates through an in-memory queue.
+3. **Pluggable Storage Backend (`database/storage.py`)**:
+   - Dual-mode storage: **`LocalFileStorage`** (zero-dependency JSON storage in `data/analyses/`) or **`MongoStorage`** (MongoDB Atlas/community).
+   - Real-time atomic persistence of search evidence, citation URLs, and intermediate report drafts.
+   - Global query cache (`data/search_cache.json` / Mongo `search_cache`) to avoid duplicate external API calls.
+4. **Agent Orchestrator & State Machine (`agents/`)**:
+   - Linear preparation pipeline: **Planner** $\rightarrow$ **Tool Routing ReAct Agent** $\rightarrow$ **Evidence Synthesizer** $\rightarrow$ **Report Writer**.
+   - Cyclic self-correction engine: **LangGraph Map-Reduce loop** that discovers gaps, executes targeted tool searches in parallel, and merges findings up to $k$ iterations based on `research_depth`.
+5. **Model Context Protocol (MCP) Gateway (Port 5001)**:
+   - FastAPI server mounting FastMCP servers via Server-Sent Events (`/mcp/{server}/sse`).
+   - Integrates Google Search & Shopping, Crawl4AI web scrapers, YouTube transcript fetchers, and X (Twitter) social analyzers.
+6. **Multi-Model LLM Routing**:
+   - Supports Google Gemini, Ollama (local models like `llama3.2:3b`, `phi3:mini`, `gemma3:1b`), Groq, Jan AI, and Hugging Face.
+   - Distinct model configurations per pipeline stage (`PLANNER_MODEL`, `TOOL_ROUTING_MODEL`, `EVIDENCE_ANALYSIS_MODEL`, `REPORT_WRITING_MODEL`, `REPORT_REVIEW_MODEL`).
 
 ---
 
-## 3. End-to-End Request Flow
-
-Here is exactly what happens when a user requests a market analysis:
+## 3. End-to-End Execution Flow
 
 ```
-User (UI)       Frontend        FastAPI (8000)       MongoDB       LangGraph Engine      MCP Gateway (5001)    LLM (Gemini)
-   │               │                  │                 │                  │                     │                  │
-   │─[1] Query ───>│                  │                 │                  │                     │                  │
-   │   & Report    │─[2] POST /anal.─>│                 │                  │                     │                  │
-   │   Type        │                  │─[3] Insert ────>│                  │                     │                  │
-   │               │                  │     Pending     │                  │                     │                  │
-   │               │<─[4] Return ID───│                 │                  │                     │                  │
-   │               │                  │─[5] Spawn Async Task ─────────────>│                     │                  │
-   │               │─[6] Open WS ────>│                                    │                     │                  │
-   │               │                  │─[7] Pipe Queue Updates ───────────>│                     │                  │
-   │               │                  │                                    │─[8] Initial ReAct ─>│                  │
-   │               │                  │                                    │     Agent Pass      │─[9] Run Tools ──>│
-   │               │                  │                                    │                     │<─[10] Results ───│
-   │               │                  │                                    │─[11] Stream log ───>│                  │
-   │               │<─[12] Log Msg ───│<─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│                     │                  │
-   │               │                  │                                    │                                        │
-   │               │                  │                                    │─[13] Reflection & Gaps Loop (Map/Red) ─│
-   │               │                  │                                    │     (Find gaps -> Parallel searches    │
-   │               │                  │                                    │      -> Merge details into draft)      │
-   │               │                  │                                    │                                        │
-   │               │                  │                                    │─[14] Generate PDF ─>│                  │
-   │               │                  │─[15] Update Completed Status ─────>│                     │                  │
-   │               │                  │      & path                        │                     │                  │
-   │               │<─[16] Close WS ──│                                    │                     │                  │
-   │               │                  │                                    │                     │                  │
-   │<─[17] Ready ──│                  │                                    │                     │                  │
-   │               │─[18] GET /rep.──>│                                    │                     │                  │
-   │<─[19] PDF ────│<─[20] Send PDF ──│                                    │                     │                  │
+User/Client       FastAPI (8000)       Storage Backend      Planner & ReAct       MCP Gateway (5001)    LangGraph Loop
+    │                   │                    │                     │                      │                  │
+    │──[1] POST /anal.─>│                    │                     │                      │                  │
+    │                   │──[2] Save Analysis>│                     │                      │                  │
+    │                   │      (Pending)     │                     │                      │                  │
+    │<──[3] Return ID───│                    │                     │                      │                  │
+    │                   │──[4] Spawn Task ────────────────────────>│                      │                  │
+    │──[5] Open WS ────>│                    │                     │                      │                  │
+    │                   │                    │                     │──Step 1: Plan───────>│                  │
+    │                   │                    │                     │──Step 2: Tool Run ──>│                  │
+    │                   │                    │                     │                      │──Run Tools──────>│
+    │                   │                    │                     │<─Tool Results────────│<──Data/URLs──────│
+    │                   │                    │<──Push Evidence─────│                      │                  │
+    │<──[6] WS Logs ────│<──Queue Stream─────│                     │──Step 3: Synthesis──>│                  │
+    │                   │                    │<──Save Draft────────│──Step 4: Draft──────>│                  │
+    │                   │                    │                     │                      │                  │
+    │                   │                    │                     │──Step 5: Invoke Graph──────────────────>│
+    │                   │                    │                     │                      │                  │──Find Gaps
+    │                   │                    │                     │                      │                  │──Parallel Fill
+    │                   │                    │                     │                      │                  │──Merge Gaps
+    │                   │                    │                     │                      │                  │  (k iterations)
+    │                   │                    │<──Update Draft──────│<─Final Report───────────────────────────│
+    │                   │                    │                     │──Compile PDF         │                  │
+    │                   │                    │<──Set Completed─────│                      │                  │
+    │<──[7] Close WS ───│<──Sentinel None────│                     │                      │                  │
+    │                   │                    │                     │                      │                  │
+    │──[8] GET /rep.───>│                    │                     │                      │                  │
+    │<──[9] Return PDF──│                    │                     │                      │                  │
 ```
 
-1.  **POST Trigger**: The user submits a research topic. The Frontend posts to `/analysis`.
-2.  **Job Database Registry**: FastAPI writes the request to MongoDB with status `pending` and returns an `analysis_id` string.
-3.  **Task Launch**: FastAPI creates an asynchronous task (`asyncio.create_task`) and sets up an in-memory queue (`asyncio.Queue`) for streaming messages.
-4.  **WebSocket Binding**: The Frontend opens a WebSocket connection to `/ws/research/{analysis_id}`. The backend listens to the queue and immediately pipes any incoming strings down the socket.
-5.  **Agent ReAct Stage**: The agent first runs a traditional ReAct loop using Google Search, web scraping, etc., to write a preliminary base draft.
-6.  **LangGraph Reflection Loop (Self-Correction)**:
-    *   **Find Gaps (Node)**: The LLM analyzes the draft, outlines missing statistics, and outputs a JSON containing specific research gaps.
-    *   **Continue & Map (Edge)**: Evaluates the gaps and sends parallel (`Send` API) workers to target specific tools (`fill_gaps` Node).
-    *   **Fill Gaps (Node)**: Individual instances of the ReAct agent fetch the missing data in parallel via the MCP servers.
-    *   **Merge (Node/Reduce)**: The engine receives all parallel answers, merges them into the main report text, and repeats the cycle if limits are not reached.
-7.  **Compilation & Storage**: Once complete, the markdown report is parsed into a PDF section, saved to `/reports/{id}/{type}.pdf`, and MongoDB is updated with the file's location.
-8.  **Closure & Download**: The queue receives a `None` sentinel closing the WebSocket. The UI triggers a browser download pointing to `/reports/{rid}/{file_id}`.
+### Detailed Pipeline Steps:
+1. **Submission (`POST /analysis`)**: Client submits market topic, analysis type, geography, research depth (`quick`, `comprehensive`, `deep_research`), objective, and context.
+2. **Storage Initialized**: Storage creates document with status `pending`, generates a 24-character hexadecimal ID, and initializes the in-memory queue.
+3. **Step 1 — Planner Agent**: The `PLANNER_MODEL` generates a structured research plan, questions to answer, required metrics, and search queries.
+4. **Step 2 — Tool Routing (Evidence Gathering)**: A ReAct agent runs tools via MCP to collect web searches, social posts, video transcripts, and scraped articles. Tool outputs are automatically summarized, and every result + extracted URL is **atomically persisted** to storage.
+5. **Step 3 — Evidence Analysis & Synthesis**: The `EVIDENCE_ANALYSIS_MODEL` extracts key quantitative statistics, player market shares, regulatory facts, and links with citation verification.
+6. **Step 4 — Initial Report Drafting**: The `REPORT_WRITING_MODEL` produces the initial comprehensive draft adhering to domain prompt guidelines. The draft is immediately saved to disk/DB.
+7. **Step 5 — LangGraph Map-Reduce Reflection Loop**:
+   - `find_gaps`: The `REPORT_REVIEW_MODEL` analyzes the draft and outputs structured knowledge gaps.
+   - `continue_to_fill_gaps`: Maps each gap into parallel execution branches using LangGraph's `Send` API.
+   - `fill_gaps`: Parallel ReAct agent instances fetch missing metrics and data.
+   - `merge_filled_gaps`: Reduces and synthesizes newly discovered data back into the main report text.
+   - Evaluates iteration limit ($k=2$ for `quick`, $k=3$ for `comprehensive`, $k=5$ for `deep_research`). Repeats if $k$ is not reached.
+8. **PDF Generation & Completion**: `MarkdownPdf` builds a PDF in `reports/{analysis_id}/{type}.pdf`. Storage status is updated to `completed` and the download path is emitted over WebSocket.
 
 ---
 
 ## 4. Component Breakdown
 
-*   **FastAPI Backend (`server.py`)**: 
-    *   Acts as the system API Gateway.
-    *   Responsible for route mappings, request validations via Pydantic schemas (`AnalysisSchema`), and background task management using the Python `asyncio` event loop.
-*   **LangGraph Orchestrator (`agents/graph.py` & `agents/create_agent.py`)**: 
-    *   Translates research requirements into an execution state machine.
-    *   Implements the **Map-Reduce** design pattern (splitting gap searches in parallel and reducing them back to a single report).
-    *   Applies a rate-limiter aware model invoker with exponential backoff (`call_llm_with_backof¯ˀf`) to prevent LLM rate limits (`429` / `QuotaExhausted` errors).
-*   **FastMCP Tool Servers (`mcp_servers/`)**:
-    *   Runs a separate FastAPI app on port 5001 that mounts Server-Sent Events (SSE) endpoints.
-    *   Exposes tools like web scraping (`crawl4ai`), YouTube transcripts (`youtube_transcript_api`), social feeds (X API v2 with SERP fallback), and search indexes (SerpAPI).
-*   **Database (MongoDB)**: 
-    *   MongoDB holds document states. Since research query structures, output report schemas, and logging arrays vary heavily by industry, a NoSQL structure fits perfectly.
-*   **Background Jobs**: 
-    *   Async tasks run within FastAPI's process space. They stream logs to clients using queues without blocking HTTP thread handlers.
+* **FastAPI Gateway (`server.py`)**:
+  - Handles `/analysis`, `/analysis/{id}`, `/reports/...`, and `/ws/research/{id}`.
+  - Manages asynchronous worker tasks and WebSocket queue piping.
+  - Houses the `PROMPTS_REGISTRY` mapping each `AnalysisType` to domain prompts.
+* **Storage Abstraction Layer (`database/storage.py`)**:
+  - Abstract base class `StorageBackend` with concrete implementations: `LocalFileStorage` and `MongoStorage`.
+  - Thread-safe local file operations using mutex locks.
+  - Persistent query cache (`search_cache`) to prevent redundant tool executions.
+* **Real-Time Memory & Evidence Tracker (`database/memory.py`)**:
+  - `record_tool_evidence`: Persists every search call with timestamp, tool name, query/URL, content preview, and extracted URLs.
+  - `record_draft_report`: Persists intermediate drafts so progress is never lost during long runs.
+* **Agent Factory (`agents/create_agent.py`)**:
+  - Orchestrates the 5-step research pipeline and handles PDF generation and failure states.
+* **LangGraph Engine (`agents/graph.py`)**:
+  - Defines the cyclical StateGraph (`find_gaps` $\rightarrow$ `fill_gaps` $\rightarrow$ `merge_filled_gaps` $\rightarrow$ `route_loop`).
+  - Implements robust JSON parsing with fallback line extraction for gap reflection.
+* **Model Context Protocol Servers (`mcp_servers/`)**:
+  - `google_tools`: Google Search, Shopping, News, and Google Trends via SerpAPI.
+  - `scraper_tools`: Async Crawl4AI scraper converting web pages into clean markdown.
+  - `youtube_tools`: Robust YouTube video ID parsing and transcript extraction.
+  - `x_tools`: X (Twitter) API v2 client with fallback to SERP web indexing.
+* **Prompt Engineering Hub (`prompts/`)**:
+  - Individual prompt suites for Industry, Competitor, Market Gap, Target Market, Barrier, and Sales Forecast reports, plus Planner instructions.
 
 ---
 
@@ -173,351 +208,298 @@ User (UI)       Frontend        FastAPI (8000)       MongoDB       LangGraph Eng
 
 ```
 server/
-├── server.py              # Main API entrypoint, routes (HTTP/WS), and task hooks
-├── requirements.txt       # Dependencies (FastAPI, PyMongo, LangGraph, Crawl4AI, etc.)
-├── agents/                # Core LLM brain logic
-│   ├── create_agent.py    # Assembles initial ReAct agent and the LangGraph orchestrator
-│   ├── graph.py           # Defines the LangGraph nodes, edges, map-reduce, and compilation
-│   ├── state.py           # AgentState definition and custom list reducer (with DELETE reset support)
-│   └── utils.py           # LLM rate limiting (InMemoryRateLimiter) & exponential backoff retry logic
-├── database/              # Database adapter
-│   ├── db.py              # MongoClient connection and database instance initialization
-│   └── schema.py          # Pydantic schemas (AnalysisSchema) and Enums (Status, AnalysisType)
-├── mcp_servers/           # Model Context Protocol tier (Port 5001)
-│   ├── main.py            # Mounts all individual tool servers onto unified SSE endpoints
-│   ├── google_tools/      # Google Search, Google Shopping, Google News, and Google Trends
-│   ├── scraper_tools/     # Crawler engine powered by Crawl4AI
-│   ├── youtube_tools/     # YouTube video transcript retrieval
-│   └── x_tools/           # X (Twitter) tweet search, profile lookup & engagement metrics
-├── prompts/               # Domain-specific instructions
-│   ├── industry.py        # System prompt blueprints for market reports
-│   └── competitor.py      # Prompt templates for competitive gap analysis
-└── reports/               # Output directory where generated PDFs are stored locally
+├── server.py                   # FastAPI main entrypoint, REST & WebSocket endpoints
+├── requirements.txt            # Python dependencies (FastAPI, LangGraph, Crawl4AI, etc.)
+├── .env.example                # Example environment variables template
+├── config/
+│   └── settings.py             # Centralized settings (LLM provider, storage, rate limits, keys)
+├── agents/                     # LLM multi-agent core
+│   ├── create_agent.py         # 5-step research pipeline orchestrator & PDF generation
+│   ├── graph.py                # LangGraph StateGraph (map-reduce gap reflection)
+│   ├── state.py                # AgentState schema & custom list reducers with reset
+│   └── utils.py                # LLM model resolution, rate limiting, and backoff retries
+├── database/                   # Data layer & persistence
+│   ├── db.py                   # MongoDB client connection
+│   ├── memory.py               # Real-time search evidence recording & URL extractor
+│   ├── schema.py               # Pydantic schemas (CreateAnalysisRequest, AnalysisSchema, Enums)
+│   └── storage.py              # Dual storage backend: LocalFileStorage & MongoStorage
+├── data/                       # Local file storage directory (when STORAGE_BACKEND="local")
+│   ├── analyses/               # Individual analysis JSON files ({analysis_id}.json)
+│   └── search_cache.json       # Query deduplication cache
+├── mcp_servers/                # Model Context Protocol tier (Port 5001)
+│   ├── main.py                 # Mounts tool servers onto unified SSE endpoints
+│   ├── google_tools/           # Google Search, Trends, News, and Shopping
+│   ├── scraper_tools/          # Crawl4AI web crawler
+│   ├── youtube_tools/          # YouTube transcript retrieval
+│   └── x_tools/                # X (Twitter) search & engagement metrics
+├── prompts/                    # Domain-specific prompt templates
+│   ├── barrier_assessment.py   # Barrier to entry report prompts
+│   ├── competitive_analysis.py # Competitor analysis report prompts
+│   ├── industry.py             # Industry analysis report prompts
+│   ├── market_gap.py           # Market gap report prompts
+│   ├── planner.py              # Master research planner prompt
+│   ├── sales_forecast.py       # Sales forecast & demand projection prompts
+│   └── target_market_segmentation.py # Target market & segmentation prompts
+├── reports/                    # Output directory for generated PDF files
+└── tests/                      # Testing & CLI tools
+    ├── run_terminal_research.py# Terminal research runner with live WebSocket logs
+    ├── test_models.py          # Model testing & validation benchmark
+    ├── test_graph.py           # Graph logic tests
+    └── view_db.py              # Database/storage inspection script
 ```
 
 ---
 
-## 6. Data Flow
+## 6. Data Contracts & API Design
 
-```
-                      Raw User Prompt + Report Type
-                                   │
-                                   ▼
-                      [MongoDB AnalysisSchema Entry]
-                                   │
-                                   ▼
-                      [Initial ReAct Agent State]
-                                   │
-                                   ▼
-                      [Base Research Draft String]
-                                   │
-                         ┌─────────┴─────────┐
-                         ▼                   ▼
-                 [Reflection LLM]    [Knowledge Gaps JSON]
-                         │                   │
-                         ▼                   ▼
-           ┌───────────────────────────────────────────────┐
-           │ Map: Parallel FastMCP Tool Executions         │
-           │ (Crawlers, Youtube transcripts, Web Scrapes)  │
-           └───────────────────────┬───────────────────────┘
-                                   │
-                                   ▼
-                   [Collected Data Snippets Array]
-                                   │
-                                   ▼
-                  [Reduce: Merge gaps into draft]
-                                   │
-                                   ▼
-                    [Final Completed Report Draft]
-                                   │
-                                   ▼
-                       [Markdown-PDF Compiler]
-                                   │
-                                   ▼
-                    [Storage & Server Output PDF]
-```
+### 1. `POST /analysis`
+Creates and kicks off a research task asynchronously.
 
----
-
-## 7. API Design
-
-The project implements two key API designs: **Client-facing Gateway APIs** and **Internal Tool APIs**.
-
-### Client-Facing REST & WebSocket (FastAPI)
-*   `POST /analysis`: Creates an analysis record. Exposes a payload containing `{query: string, analysis_type: string}`. Returns `{id: string, status: "created"}`.
-*   `GET /analysis/{analysis_id}`: Retrieves current research status, metadata, and final PDF links.
-*   `WS /ws/research/{request_id}`: Standard WebSocket stream piping real-time agent output from the queue.
-*   `GET /reports/{rid}/{file_id}`: Serves compiled PDFs with path traversal checks.
-
-### Internal Tool APIs (Model Context Protocol SSE)
-Tools are decoupled using the **Model Context Protocol (MCP)**.
-*   The main server connects to `http://localhost:5001/mcp/{tool_name}/sse` to consume tools.
-*   By using standard `MultiServerMCPClient`, the agent queries a list of tools from the MCP registry dynamically at startup, wrapping remote endpoints into LangChain `BaseTool` models.
-
----
-
-## 8. Database Design
-
-Since MongoDB is a document database, data is stored as schema-flexible JSON files within the `market_analysis` database.
-
-### `analyses` Collection
+**Request Payload (`CreateAnalysisRequest`):**
 ```json
 {
-  "_id": ObjectId("66967406a0df01025547cb0b"),
-  "query": "Autonomous Drone Delivery for Groceries",
-  "analysis_type": "Market Gap Report",
-  "status": "completed",
-  "created_at": "Thu Jul 16 13:58:45 2026",
-  "report_path": "66967406a0df01025547cb0b/Market Gap Report.pdf"
+  "market_topic": "B2B Remote Collaboration Software",
+  "analysis_type": "sales_forecasting",
+  "geography": "Global",
+  "research_depth": "comprehensive",
+  "objective": {
+    "type": "estimate_future_demand",
+    "description": "Estimate 3-year market demand and pricing trends"
+  },
+  "decision_question": "Should we enter the remote team productivity space in 2026?",
+  "context": {
+    "target_customer": "Mid-market tech companies",
+    "business_stage": "exploring",
+    "time_horizon": "3 Years",
+    "competitors": ["Slack", "Notion", "Miro"],
+    "forecast_period": "3 Years"
+  },
+  "model_name": null
 }
 ```
-*   **Schema Fields**:
-    *   `_id`: MongoDB unique identifier used to bind WebSocket sessions and directory file naming.
-    *   `query`: The original user prompt.
-    *   `analysis_type`: Dictates which prompt and agent config is triggered.
-    *   `status`: State tracking. (Allowed values: `pending`, `in_progress`, `completed`, `failed`).
-    *   `created_at`: Creation timestamp.
-    *   `report_path`: Absolute path or download key pointing to the compiled PDF document.
 
----
+* **Supported `analysis_type` values**:
+  - `industry_analysis` (`Industry Report`)
+  - `competitor_analysis` (`Competitor Report`)
+  - `market_gap_analysis` (`Market Gap Report`)
+  - `target_market_analysis` (`Target Market Report`)
+  - `barrier_analysis` (`Barrier Report`)
+  - `sales_forecasting` (`Sales Forecast Report`)
 
-## 9. Authentication & Security
+* **Supported `research_depth` values**:
+  - `quick`: 2 reflection iterations ($k=2$)
+  - `comprehensive`: 3 reflection iterations ($k=3$, default)
+  - `deep_research`: 5 reflection iterations ($k=5$)
 
-1.  **CORS Safety**: Explicit origin checks restrict browser-level executions to authenticated local ports (`localhost:3000`/`3000`).
-2.  **Path Traversal Prevention**: Serving files locally exposes path risks. If a user queries `/reports/../../etc/passwd`, it can leak system keys. The backend enforces a strict filter:
-    ```python
-    if ".." in file_id:
-        raise HTTPException(status_code=400, detail="Bad path")
-    ```
-3.  **Transient Failure Retries & Rate Limiter Security**: Protects LLM credentials by wrapping executions with an exponential backoff controller (`call_llm_with_backoff`) and setting `InMemoryRateLimiter` limits.
-
----
-
-## 10. Deployment Architecture
-
-To host this application in a production environment, the following configuration is recommended:
-
-```
-                            ┌────────────────────────┐
-                            │      Load Balancer     │
-                            └───────────┬────────────┘
-                                        │
-                         ┌──────────────┴──────────────┐
-                         ▼                             ▼
-              ┌────────────────────┐        ┌────────────────────┐
-              │  FastAPI Backend   │        │  FastAPI Backend   │
-              │     (Instance A)   │        │     (Instance B)   │
-              └──────────┬─────────┘        └──────────┬─────────┘
-                         │                             │
-                         │    Submit Worker Tasks      │
-                         └──────────────┬──────────────┘
-                                        ▼
-                                ┌──────────────┐
-                                │ Redis Broker │
-                                └──────┬───────┘
-                                       │
-                         ┌─────────────┴─────────────┐
-                         ▼                           ▼
-              ┌────────────────────┐      ┌────────────────────┐
-              │  Celery Worker A   │      │  Celery Worker B   │
-              └──────────┬─────────┘      └──────────┬─────────┘
-                         │                           │
-              ┌──────────┴───────────────────────────┴──────────┐
-              ▼                                                 ▼
-     ┌──────────────────┐                              ┌──────────────────┐
-     │  MongoDB Atlas   │                              │   AWS S3 Bucket  │
-     │  (Database Host) │                              │  (PDF Documents) │
-     └──────────────────┘                              └──────────────────┘
+**Response:**
+```json
+{
+  "id": "da52f47236fcaa595a21de1e",
+  "status": "created"
+}
 ```
 
-*   **Hosting Platform**: AWS ECS (Fargate) or Google Cloud Run for elastic scaling.
-*   **Queue Management (Production Grade)**: Moving off FastAPI `asyncio` task queues. In production, we deploy a **Redis** message broker and run workers on **Celery** or **Arq** to handle the agent graphs. This ensures that if a backend container crashes, research tasks are not lost.
-*   **Database**: Managed **MongoDB Atlas** with automated backups and replica sets.
-*   **Object Storage**: Transition local `reports/` file writes to an **Amazon S3** or **Google Cloud Storage** bucket for durable document storage.
-*   **CI/CD**: GitHub Actions building Docker images for the main server and tool services, pushing to Amazon ECR, and triggering rolling updates on ECS.
+### 2. `GET /analysis/{analysis_id}`
+Retrieves full record status, parameters, intermediate drafts, report path, and real-time evidence collected.
+
+### 3. `WS /ws/research/{request_id}`
+Streams real-time agent thoughts, tool invocations, argument payloads, reflection progress, and completion events.
+- Emits `__OUTPUT_FILE__reports/{id}/{file}.pdf` on completion.
+- Emits `__ERROR__{message}` if pipeline encounters an unrecoverable failure.
+
+### 4. `GET /reports/{rid}/{file_id}`
+Safely serves generated PDF reports with built-in path-traversal validation.
 
 ---
 
-## 11. Key Design Decisions (Pros vs. Cons)
+## 7. Storage Architecture & Evidence Persistence
 
-### 1. LangGraph Framework
-*   **Why**: Implementing iterative reflection, self-correction, and search loops is difficult to manage in linear chains. LangGraph treats agent states as a directed cyclic graph with native support for state recovery, parallel loops, and map-reduce.
-*   **Pros**: Highly structured; state changes are transactional; easily handles branching and parallel searches.
-*   **Cons**: Steeper learning curve; high token consumption due to cyclic iterations.
-
-### 2. Micro-servicing Tools via MCP (Model Context Protocol)
-*   **Why**: Separates tool interfaces (scraping libraries, API authentications) from the core AI engine.
-*   **Pros**: Decouples dependencies. Upgrading Scraping tools (e.g., Crawl4AI) won't break the agent graph. Allows tool testing independent of LLM connectivity.
-*   **Cons**: Adds network overhead (HTTP/SSE handshake) between port 8000 and port 5001.
-
-### 3. Server-Sent Events (SSE) Transport for MCP
-*   **Why**: SSE operates over standard HTTP, making it simpler to set up behind firewalls and load balancers compared to custom WebSocket setups for tool interfaces.
-
----
-
-## 12. Scalability to 1 Million Users
-
-If MarketScout scaled to 1 million users, we would encounter bottlenecks in three primary areas: **Agent Execution**, **Scraping Rate Limits**, and **Storage**. Here is how we would scale:
-
-1.  **Distributed Task Queues**: 
-    *   *Bottleneck*: Running `asyncio.create_task` consumes RAM. A spike in requests would run the host out of memory.
-    *   *Solution*: Offload the execution of the agent graph to a dedicated worker pool (Celery/Redis or Arq). Backend servers should only accept requests, write metadata, and return immediately.
-2.  **Web Scraping & Proxy Networks**:
-    *   *Bottleneck*: Crawling websites (Crawl4AI) from a single host IP causes rapid IP blocking and CAPTCHA locks.
-    *   *Solution*: Route all scraping tools through a rotating proxy provider (like Bright Data or ScrapingBee) and cluster Crawl4AI instances using headless browser pools (e.g., Browserless.io).
-3.  **State Persistence & WebSocket Scaling**:
-    *   *Bottleneck*: WebSockets are stateful and bound to a single backend instance. If Instance A has the WS connection, but Instance B executes the Celery worker, logs cannot easily bridge.
-    *   *Solution*: Implement a **Redis Pub/Sub** channel. Workers publish execution logs to Redis, and the FastAPI instances subscribe to Redis and stream logs down their respective WebSockets.
-4.  **Durable File Storage**:
-    *   *Bottleneck*: Storing PDFs on local servers fails in multi-server systems (Instance A can't serve a PDF saved on Instance B).
-    *   *Solution*: Stream reports directly to an AWS S3 bucket and serve them to users via pre-signed URLs.
-
----
-
-## 13. Interview Explanation Guide
-
-Use this structure to pitch this architecture in a **5-minute interview answer**:
-
-> "For my self-built project, MarketScout, I designed and built an AI-driven agentic research platform that automates market analysis. 
-> 
-> **The Problem**: Market research is highly fragmented, requiring analysts to search social networks, video comments, and scrape websites manually.
-> 
-> **The Architecture**: I built a micro-service system separating core agent orchestration from data extraction. The frontend is built on React, which connects to a FastAPI gateway. The gateway manages metadata using MongoDB and offloads research tasks to an asynchronous engine.
-> 
-> To run the research workflow, I chose **LangGraph**. It implements a self-correcting **Map-Reduce** pattern: the agent writes a draft, reflects on its own outputs to identify information gaps, initiates parallel search queries, and merges the results back into a final PDF report.
-> 
-> **Model Context Protocol (MCP)**: To keep tools modular, I decoupled all scraping, YouTube, and Google integrations into separate **FastMCP** micro-services communicating over SSE. This isolates core reasoning logic from external API dependencies and network scrapers.
-> 
-> **Key Decisions**: I chose Websockets for real-time progress logging so users see the agent's research steps dynamically. I also added exponential backoff on model calls to guard against API rate limits.
-> 
-> **If I were to scale this to 1 million users**: I would swap out the local asyncio queues for a distributed worker pool using Redis and Celery, shift local report storage to Amazon S3, and route scraping requests through rotating proxy networks to bypass IP restrictions."
-
----
-
-## 14. Systems Architecture Diagram
+MarketScout implements a pluggable storage layer via `database/storage.py`.
 
 ```
-                             ┌────────────────┐
-                             │     Users      │
-                             └───────┬────────┘
-                                     │ HTTP / WebSocket (Port 8000)
-                                     ▼
-                          ┌─────────────────────┐
-                          │   React Frontend    │
-                          └──────────┬──────────┘
-                                     │
-                  ┌──────────────────┴──────────────────┐
-                  │ POST /analysis                      │ WS /ws/research/...
-                  ▼                                     ▼
-       ┌─────────────────────┐               ┌─────────────────────┐
-       │   FastAPI Backend   │──────────────>│   WebSocket Queue   │
-       │     (Port 8000)     │               │     Streamer        │
-       └──────────┬──────────┘               └──────────┬──────────┘
-                  │                                     │
-                  ├──────────────────┐                  │ Streams Real-time
-                  │ Writes Metadata  │                  │ Progress
-                  ▼                  ▼                  ▼
-          ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-          │   MongoDB    │   │  LangGraph   │   │  Frontend    │
-          │   Database   │   │  Engine      │   │  UI Console  │
-          └──────────────┘   └──────┬───────┘   └──────────────┘
-                                    │
-                                    │ Resolves Tools via SSE Client
-                                    ▼
-                          ┌─────────────────────┐
-                          │     MCP Gateway     │
-                          │     (Port 5001)     │
-                          └──────────┬──────────┘
-                                     │
-            ┌────────────────────────┼────────────────────────┐
-            ▼                        ▼                        ▼
-     ┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-     │ Google Tools │         │ Reddit Tools │         │ Scraper Tool │
-     └──────┬───────┘         └──────┬───────┘         └──────┬───────┘
-            │                        │                        │
-            ▼                        ▼                        ▼
-       Google APIs              Reddit JSON               Crawl4AI
-     (Search, Trends)           Public Search          Web Crawler
+                  ┌───────────────────────────────┐
+                  │      StorageBackend (ABC)     │
+                  └───────────────┬───────────────┘
+                                  │
+                  ┌───────────────┴───────────────┐
+                  ▼                               ▼
+       ┌────────────────────┐          ┌────────────────────┐
+       │  LocalFileStorage  │          │    MongoStorage    │
+       │(Default, Zero-Dep) │          │  (MongoDB Atlas)   │
+       └────────────────────┘          └────────────────────┘
 ```
+
+### 1. `LocalFileStorage` (Default)
+- Stores analyses as formatted JSON documents in `data/analyses/{analysis_id}.json`.
+- Requires **no external database** to run locally.
+- Thread-safe file writes using Python `threading.Lock`.
+- Automatically falls back to `LocalFileStorage` if MongoDB is configured but unreachable.
+
+### 2. Real-Time Evidence Logging (`database/memory.py`)
+Every tool execution records a `SearchEvidenceItem`:
+```json
+{
+  "timestamp": "Sun Aug 23 13:02:15 2026",
+  "stage": "initial_research",
+  "tool_name": "search_google_news",
+  "query_or_url": "b2b remote collaboration software trends",
+  "content_snippet": "Market growth projections indicate a 14.2% CAGR...",
+  "extracted_urls": [
+    "https://www.pcmag.com/picks/the-best-online-collaboration-software",
+    "https://www.techradar.com/best/best-cloud-storage"
+  ]
+}
+```
+* **Why this matters**:
+  - **Zero data loss**: If a rate limit or network timeout occurs later in the run, all research evidence and links collected up to that point remain saved on disk.
+  - **Auditability**: Analysts can inspect raw snippets and verified citation sources.
+  - **Search Caching**: Search results are cached by normalized keys (`{tool_name}:{query}`) in `data/search_cache.json` to prevent repetitive API calls.
 
 ---
 
-## 15. Getting Started & Local Development
+## 8. Multi-Model Pipeline & Configuration
+
+MarketScout features a multi-model architecture where different steps in the research lifecycle can be assigned to different LLMs based on performance and budget:
+
+| Pipeline Stage | Environment Variable | Default Model | Responsibility |
+|---|---|---|---|
+| **Fallback / Multipurpose** | `MULTIPURPOSE_MODEL` | `gemini-2.0-flash` / `llama3.2:3b` | General tasks & defaults |
+| **Planner** | `PLANNER_MODEL` | `gemini-2.0-flash` / `llama3.2:3b` | Outlining research strategy & sub-queries |
+| **Tool Routing** | `TOOL_ROUTING_MODEL` | `gemini-2.0-flash` / `llama3.2:3b` | ReAct agent tool invocation & evidence gathering |
+| **Tool Summarizer** | `SUMMARIZATION_MODEL` | `gemini-2.0-flash` / `llama3.2:3b` | Compressing lengthy scraping outputs |
+| **Evidence Analysis** | `EVIDENCE_ANALYSIS_MODEL` | `gemini-2.0-flash` / `llama3.2:3b` | Fact synthesis, numerical extraction & URL checks |
+| **Report Writing** | `REPORT_WRITING_MODEL` | `gemini-2.0-flash` / `llama3.2:3b` | Drafting sections & merging gap results |
+| **Report Review (Gaps)**| `REPORT_REVIEW_MODEL` | `gemini-2.0-flash` / `llama3.2:3b` | Critic LLM identifying knowledge gaps |
+
+### Supported Providers:
+1. **Google Gemini**: Set `LLM_PROVIDER="google"` and supply `GOOGLE_API_KEY`. (Default model: `gemini-2.0-flash`).
+2. **Ollama (Local Models)**: Set `LLM_PROVIDER="ollama"`, `OLLAMA_BASE_URL="http://localhost:11434"`.
+   - Recommended local models:
+     - `llama3.2:3b` (Fast, high quality, minimal RAM pressure)
+     - `gemma3:1b` (Ultra-lightweight)
+     - `phi3:mini` (Fast and capable)
+3. **Groq**: Set `LLM_PROVIDER="groq"`, `GROQ_API_KEY="..."`, `GROQ_MODEL="llama-3.3-70b-versatile"`.
+4. **Jan AI**: Set `LLM_PROVIDER="jan"`, `JAN_API_BASE="http://localhost:1337/v1"`.
+5. **Hugging Face**: Set `LLM_PROVIDER="huggingface"`, `HUGGINGFACEHUB_API_TOKEN="..."`.
+
+### Gemini Rate Limiting & Transient Failure Handling
+To avoid `429 Quota Exceeded` errors when operating on Google Free Tier accounts:
+- **`InMemoryRateLimiter`**: Regulates outgoing requests (configurable via `GOOGLE_RATE_LIMIT_RPS`, default `0.5` rps).
+- **Exponential Backoff**: `call_llm_with_backoff` automatically retries requests on transient failures (up to 7 retries with jitter).
+
+---
+
+## 9. Getting Started & Local Development
 
 ### Prerequisites
-- **Python**: Python 3.10 or 3.11 is recommended.
-- **MongoDB**: A running MongoDB instance (locally via Community Edition or in the cloud using MongoDB Atlas).
-- **API Keys**:
-  - `GOOGLE_API_KEY`: Required if using Google Gemini models.
-  - `SERP_DEV_API_KEY` (or `SERP_API_KEY`): Required for Google Search and Trend tool operations.
-  - `HUGGINGFACEHUB_API_TOKEN`: Required if using Hugging Face models.
+- **Python**: 3.10, 3.11, or 3.12.
+- **Node.js**: (Optional) For the frontend UI.
+- **Ollama**: (Optional) If running local models (`brew install ollama && ollama run llama3.2:3b`).
+- **MongoDB**: (Optional) Only required if `STORAGE_BACKEND="mongodb"`.
 
-### Local Installation
-1. **Clone/Navigate to the Server Directory**:
-   ```bash
-   cd server
-   ```
-2. **Create and Activate a Virtual Environment**:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-3. **Install Dependencies**:
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-4. **Environment Configuration**:
-   Copy `.env.example` to `.env` and fill in the required keys:
-   ```bash
-   cp .env.example .env
-   ```
+### 1. Installation
+```bash
+# Navigate to server
+cd server
 
-### Running the Application Locally
-To run the full suite, you need to start your MongoDB instance, the Model Context Protocol (MCP) server, and the main FastAPI server.
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
-1. **Start MongoDB**:
-   Make sure MongoDB is running. If installed via Homebrew on macOS:
-   ```bash
-   brew services start mongodb-community
-   ```
-2. **Start the MCP Gateway & Tool Servers (Port 5001)**:
-   ```bash
-   python -m mcp_servers.main
-   ```
-3. **Start the FastAPI Backend Orchestrator (Port 8000)**:
-   ```bash
-   python server.py
-   ```
+# Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-### Testing the Setup
-You can access the FastAPI Swagger UI documentation at `http://localhost:8000/docs` to test endpoints such as `POST /analysis` and `GET /analysis/{analysis_id}`.
+### 2. Environment Configuration
+Copy `.env.example` to `.env` and fill in your keys:
+```bash
+cp .env.example .env
+```
+Key variables to review:
+```env
+# Storage (Default is local JSON in data/)
+STORAGE_BACKEND="local"
+DATA_DIR="data"
+
+# LLM Provider: 'google', 'ollama', 'groq', 'jan', or 'huggingface'
+LLM_PROVIDER="google"
+GOOGLE_API_KEY="your-google-api-key"
+
+# Search APIs
+SERP_DEV_API_KEY="your-serp-api-key"
+```
+
+### 3. Starting the Services
+
+**Terminal 1 — Run the FastMCP Gateway (Port 5001):**
+```bash
+python -m mcp_servers.main
+```
+
+**Terminal 2 — Run the FastAPI Server (Port 8000):**
+```bash
+python server.py
+```
+
+FastAPI will start at `http://localhost:8000`. You can inspect interactive API documentation at `http://localhost:8000/docs`.
 
 ---
 
-## 16. Multi-Model Pipeline & Configuration
+## 10. CLI Research Runner & Testing
 
-MarketScout supports a configurable multi-model pipeline where different steps of the research workflow can be routed to different LLM models (Google Gemini, Jan AI, and Hugging Face).
+MarketScout includes built-in terminal utilities to run and test research without needing the web UI.
 
-### Multi-Model Settings in `.env`
-You can configure different models for distinct pipeline stages:
-- `MULTIPURPOSE_MODEL`: General purpose fallback / task model (default: `jan-v1-4b`).
-- `GOOGLE_MODEL`: Primary Google Gemini model (default: `gemini-2.0-flash`).
-- `PLANNER_MODEL`: Handles initial research planning (default: `gemini-2.0-flash`).
-- `TOOL_ROUTING_MODEL`: Coordinates ReAct tool calls to fetch evidence (default: `gemini-2.0-flash`).
-- `SUMMARIZATION_MODEL`: Compresses large scraper outputs (default: `jan-v1-4b`).
-- `EVIDENCE_ANALYSIS_MODEL`: Synthesizes raw tool outputs into facts and URLs (default: `gemini-2.0-flash`).
-- `REPORT_WRITING_MODEL`: Drafts the final report document (default: `gemini-2.0-flash`).
-- `REPORT_REVIEW_MODEL`: Performs quality check/gap reflection (default: `gemini-2.0-flash`).
+### Running Research via Terminal
+Run an end-to-end research query with real-time streaming logs:
+```bash
+python tests/run_terminal_research.py \
+  --topic "Autonomous Drone Delivery for Groceries" \
+  --type sales_forecasting \
+  --depth quick
+```
+Options:
+- `--topic`: Any market research question or business topic.
+- `--type`: `sales_forecasting`, `industry_analysis`, `competitor_analysis`, `market_gap_analysis`, `target_market_analysis`, or `barrier_analysis`.
+- `--depth`: `quick` ($k=2$), `comprehensive` ($k=3$), or `deep_research` ($k=5$).
 
-### LLM Provider Resolution
-- If the model name contains `gemini`, it resolves to the Google provider.
-- If the model name contains `jan`, it resolves to the local Jan AI provider (`http://localhost:1337/v1`).
-- If the model name contains a slash `/` (e.g., `Qwen/Qwen3-32B`), it resolves to the Hugging Face provider.
-- The default fallback provider can be specified using `LLM_PROVIDER` (`google`, `jan`, or `huggingface`).
+### Testing LLM Models
+Validate your configured LLM models (cloud or local Ollama/Jan models):
+```bash
+python tests/test_models.py
+```
 
-### Gemini Free Tier Rate Limiting
-To prevent `ResourceExhausted` (`429` / quota exceeded) errors when using Gemini Free Tier, MarketScout includes:
-1. **Shared Rate Limiting**: A global rate limiter (`InMemoryRateLimiter`) set via `GOOGLE_RATE_LIMIT_RPS` (default is `0.1` requests/sec, i.e., 1 request per 10 seconds).
-2. **Transient Error Handling**: Automated exponential backoff retry logic (up to 7 retries with jitter) to recover from rate-limits or temporary overloads.
+### Inspecting Stored Data
+View saved analyses from local storage or MongoDB:
+```bash
+python tests/view_db.py
+```
 
+---
+
+## 11. Security, Resilience & Production Scaling
+
+1. **Path Traversal Guard**: Endpoint `/reports/{rid}/{file_id}` verifies that file paths cannot traverse out of the designated output directory.
+2. **Atomic Evidence Persistence**: Search results are committed before calling subsequent LLM chains, safeguarding research against memory crashes.
+3. **Structured Logging**: Rich console logging with contextual loggers (`market_scout`, `market_scout.agent`, `market_scout.graph`, `market_scout.storage`).
+4. **Scaling to Production**:
+   - **Task Workers**: Replace in-process `asyncio.create_task` with **Celery / Redis** or **Arq** workers for horizontal scaling.
+   - **Distributed Storage**: Transition `reports/` to an **Amazon S3** or **Google Cloud Storage** bucket.
+   - **Proxy Rotation**: Route Crawl4AI scraping requests through rotating proxies (e.g., Bright Data) to prevent rate limits.
+   - **Redis Pub/Sub**: Stream WebSocket logs across multi-instance backend containers using a Redis Pub/Sub channel.
+
+---
+
+## 12. Interview Explanation Guide
+
+Use this structure to explain MarketScout in technical interviews:
+
+> "I architected **MarketScout**, an autonomous multi-agent market intelligence platform that automates complex market research workflows—such as competitor analysis, industry reports, and sales forecasting.
+>
+> **The Problem**: Traditional market research is manual, fragmented across web search, social platforms, and video transcripts, and easily prone to LLM hallucinations when not grounded in verified data.
+>
+> **The Architecture**: 
+> 1. I built a decoupled system using **FastAPI** and the **Model Context Protocol (MCP)**. The core AI brain connects to independent FastMCP tool microservices running Google Search, Crawl4AI web scrapers, YouTube transcript extractors, and X (Twitter) APIs over Server-Sent Events (SSE).
+> 2. For execution, I designed a multi-stage pipeline: a **Planner Agent** designs a search strategy, a **ReAct Agent** executes tools with real-time atomic evidence and citation logging, an **Evidence Synthesizer** verifies facts and links, and a **Writer Agent** produces the initial report.
+> 3. To guarantee depth and self-correction, I implemented a **LangGraph Map-Reduce loop**: a critic node discovers knowledge gaps, branches out parallel workers using the LangGraph `Send` API to research missing points via MCP, and merges findings back into the report across configurable research depths ($k=2, 3, 5$).
+> 4. I introduced a pluggable storage layer supporting both local file-based JSON storage for zero-dependency local use and MongoDB Atlas for production, combined with multi-provider LLM support across Google Gemini, Ollama local models, and Groq."

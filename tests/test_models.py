@@ -31,6 +31,7 @@ def test_model(model_name: str):
 
 if __name__ == "__main__":
     models_to_test = [
+        "llama3.2:3b",
         "phi3:mini",
         "gemma3:4b",
         "jan-v1-4b:latest"
